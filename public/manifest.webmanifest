@@ -1,0 +1,12 @@
+{
+  "name": "WM Vendas",
+  "short_name": "WM Vendas",
+  "description": "Produtos, vendas e cobranças de Walquíria Maia",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fff9fb",
+  "theme_color": "#7b2448",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
