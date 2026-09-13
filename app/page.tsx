@@ -1,13 +1,14 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Barcode, Bell, Box, CalendarClock, Camera, Check, ChevronRight, CircleDollarSign, Download, Home, ImagePlus, Loader2, LockKeyhole, LogOut, PackagePlus, Pencil, Plus, ReceiptText, Search, Share, ShoppingBag, Smartphone, Sparkles, TrendingUp, UserPlus, Users, Wallet, X } from "lucide-react";
+import { AlertCircle, Barcode, Bell, Box, CalendarClock, Camera, Check, ChevronRight, CircleDollarSign, Download, Home, ImagePlus, Loader2, LockKeyhole, LogOut, PackagePlus, Pencil, Plus, ReceiptText, Search, Share, ShoppingBag, Smartphone, Sparkles, Store, TrendingUp, UserPlus, Users, Wallet, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { StoreAdmin } from "./store-admin";
 
 type Product = { id:number; barcode:string; name:string; brand:string; costPrice:number; salePrice:number; stock:number; photoUrl?:string|null };
 type Customer = { id:number; name:string; phone:string; totalPurchased:number; purchaseCount:number; pendingBalance:number; overdueCount:number; latePayments:number; loyaltyLevel:"Novo"|"Bronze"|"Prata"|"Ouro"|"Diamante"; paymentStatus:"Novo"|"Em dia"|"Atenção"|"Em atraso" };
@@ -54,7 +55,7 @@ export default function HomePage() {
   const visibleProducts=useMemo(()=>data.products.filter(p=>`${p.name} ${p.brand} ${p.barcode}`.toLowerCase().includes(search.toLowerCase())),[data.products,search]);
   function openSale(scan=false){setSaleProductId("");setModal(scan?"saleScanner":"sale")}
   function sellScanned(code:string){const product=data.products.find(p=>p.barcode.trim()===code.trim());if(!product){setEditingProduct(null);sessionStorage.setItem("wm-scanned-code",code);setModal("product");notify("Produto não cadastrado. Complete o cadastro para vender.");return}if(product.stock<1){setModal(null);notify(`${product.name} está sem estoque.`);return}setSaleProductId(String(product.id));setModal("sale");notify(`${product.name} encontrado: ${money(product.salePrice)}`)}
-  const items:[string,any,string][]=[["inicio",Home,"Início"],["produtos",ShoppingBag,"Produtos"],["vendas",CircleDollarSign,"Vendas"],["clientes",Users,"Clientes"],["cobrancas",Bell,"Cobranças"],["fornecedores",ReceiptText,"Boletos"]];
+  const items:[string,any,string][]=[["inicio",Home,"Início"],["produtos",ShoppingBag,"Produtos"],["vendas",CircleDollarSign,"Vendas"],["clientes",Users,"Clientes"],["cobrancas",Bell,"Cobranças"],["fornecedores",ReceiptText,"Boletos"],["loja",Store,"Loja"]];
   if(!authenticated)return <LoginScreen login={login} loading={saving}/>;
   return <main className="min-h-screen pb-24 lg:pb-8">
     <header className="topbar"><div className="brand"><span className="brand-mark">WM</span><div><strong>WM Vendas</strong><small>Walquíria Maia</small></div></div><div className="top-actions"><InstallButton compact/><button className="icon-btn" aria-label="Sair" onClick={logout}><LogOut/></button><button className="icon-btn" aria-label="Notificações" onClick={()=>setView(data.dashboard.supplierDueSoonCount?"fornecedores":"cobrancas")}><Bell/><i>{data.dashboard.overdueCount+data.dashboard.supplierDueSoonCount}</i></button></div></header>
@@ -67,6 +68,7 @@ export default function HomePage() {
         {view==="vendas"&&<SalesView data={data} open={()=>openSale(false)} scan={()=>openSale(true)}/>} 
         {view==="cobrancas"&&<ChargesView charges={data.charges} pay={(id)=>submit("mark_paid",{id})}/>} 
         {view==="fornecedores"&&<SupplierBillsView bills={data.supplierBills} dashboard={data.dashboard} open={()=>setModal("supplierBill")} pay={(id)=>submit("mark_supplier_bill_paid",{id})}/>} 
+        {view==="loja"&&<StoreAdmin api={api} notify={notify}/>} 
       </>}</section>
     </div>
     <nav className="bottom-nav">{items.map(([id,Icon,label])=><button key={id} className={view===id?"active":""} onClick={()=>id==="vendas"?openSale(true):setView(id)}><Icon/><span>{id==="cobrancas"?"Cobrar":label}</span></button>)}</nav>
