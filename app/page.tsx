@@ -19,7 +19,7 @@ type Data = { products:Product[]; customers:Customer[]; charges:Charge[]; suppli
 const money = (v:number) => new Intl.NumberFormat("pt-BR", { style:"currency", currency:"BRL" }).format(v || 0);
 const dateBR = (v:string) => new Intl.DateTimeFormat("pt-BR", { day:"2-digit", month:"short" }).format(new Date(`${v}T12:00:00`));
 const empty:Data = { products:[], customers:[], charges:[], supplierBills:[], dashboard:{ investment:0, expectedRevenue:0, expectedProfit:0, salesTotal:0, received:0, pending:0, overdueCount:0, supplierPendingTotal:0, supplierDueSoonCount:0, supplierOverdueCount:0 } };
-const API_URL = process.env.NEXT_PUBLIC_WM_API_URL || "https://ltkstlflqjqcuxzioaoa.supabase.co/functions/v1/wm-vendas-api";
+const API_URL = "/api/admin";
 
 async function prepareProductPhoto(file:File){
   if(!["image/jpeg","image/png","image/webp"].includes(file.type))throw new Error("Escolha uma foto JPG, PNG ou WebP.");
