@@ -59,3 +59,9 @@
     overscroll-behavior:contain;
   }
 }
+
+/* Reserva com entrada na loja */
+.deposit-fab{position:fixed;right:28px;bottom:104px;z-index:45;display:flex;align-items:center;gap:10px;border:1px solid #e7c978;background:linear-gradient(145deg,#fff8df,#f4d98e);color:#5f4012;border-radius:18px;padding:11px 15px;box-shadow:0 12px 30px #5a351c2b;cursor:pointer}
+.deposit-fab>svg{width:21px}.deposit-fab span{text-align:left}.deposit-fab b,.deposit-fab small{display:block}.deposit-fab b{font-size:13px}.deposit-fab small{font-size:10px;margin-top:2px}
+.deposit-options{padding:13px;border:1px solid #ead7ae;border-radius:14px;background:#fffaf0}.deposit-options>span{display:block;margin-bottom:9px;font-size:12px;font-weight:800;color:#654b25}.deposit-options>div{display:grid;grid-template-columns:1fr 1fr;gap:8px}.deposit-options button{min-height:44px;border:1px solid #dfc88f;border-radius:11px;background:#fff;color:#70531f;font-weight:800}.deposit-options button.active{border:2px solid #8b6530;background:#f8e6b9}.deposit-options p{margin:10px 0 0;color:#725f3e;font-size:12px}
+@media(max-width:640px){.deposit-fab{right:12px;bottom:90px;padding:9px 12px}.deposit-fab b{font-size:12px}.deposit-fab small{font-size:9px}}
