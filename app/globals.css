@@ -157,3 +157,44 @@
     background:#fff!important;
   }
 }
+
+
+/* Regra final do cadastro de produto mobile */
+@media(max-width:560px){
+  [data-slot="dialog-content"].product-dialog{
+    position:fixed!important;
+    inset:8px!important;
+    left:8px!important;
+    top:8px!important;
+    right:8px!important;
+    bottom:8px!important;
+    width:auto!important;
+    height:auto!important;
+    max-width:none!important;
+    max-height:none!important;
+    margin:0!important;
+    transform:none!important;
+    translate:none!important;
+    display:block!important;
+    overflow-y:auto!important;
+    padding:20px 18px!important;
+  }
+  [data-slot="dialog-content"].product-dialog .form{
+    display:grid!important;
+    width:100%!important;
+    min-height:0!important;
+    overflow:visible!important;
+    padding:0!important;
+  }
+  [data-slot="dialog-content"].product-dialog .dialog-actions{
+    position:static!important;
+    display:grid!important;
+    grid-template-columns:1fr 1.35fr!important;
+    width:100%!important;
+    margin:14px 0 0!important;
+    padding:12px 0 calc(4px + env(safe-area-inset-bottom))!important;
+    background:#fff!important;
+    border-top:1px solid var(--border)!important;
+    box-shadow:none!important;
+  }
+}
