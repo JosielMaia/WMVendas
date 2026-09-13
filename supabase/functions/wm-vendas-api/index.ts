@@ -11,6 +11,18 @@ const corsBase = {
   "Content-Type": "application/json",
 };
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+const WM_TENANT_SLUG = "wm-vendas";
+async function getWmTenantId() {
+  const { data, error } = await db
+    .from("wm_tenants")
+    .select("id")
+    .eq("slug", WM_TENANT_SLUG)
+    .eq("active", true)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("Tenant WM Vendas não encontrado.");
+  return data.id as string;
+}
 async function sha(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -68,12 +80,14 @@ Deno.serve(async (req) => {
     const action = String(body.action || "");
 
     if (action === "public_catalog") {
+      const tenantId = await getWmTenantId();
       const [{ data: settings, error: settingsError }, { data: products, error: productsError }] = await Promise.all([
-        db.from("wm_store_settings").select("store_name,whatsapp,store_enabled").eq("id", true).single(),
-        db.from("wm_products").select("id,name,brand,sale_price,stock,photo_path").gt("stock", 0).gt("sale_price", 0).order("name")
+        db.from("wm_store_settings").select("store_name,whatsapp,store_enabled").eq("tenant_id", tenantId).maybeSingle(),
+        db.from("wm_products").select("id,name,brand,sale_price,stock,photo_path").eq("tenant_id", tenantId).gt("stock", 0).gt("sale_price", 0).order("name")
       ]);
       if (settingsError) throw settingsError;
       if (productsError) throw productsError;
+      if (!settings) throw new Error("Configurações da loja WM Vendas não encontradas.");
       const catalog = await Promise.all((products || []).map(async (p: any) => ({
         id: p.id,
         name: p.name,
@@ -314,4 +328,3 @@ Deno.serve(async (req) => {
     return reply({ error: "Não foi possível concluir. Tente novamente." }, 500);
   }
 });
-
