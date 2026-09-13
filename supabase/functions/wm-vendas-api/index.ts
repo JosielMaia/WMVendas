@@ -53,21 +53,26 @@ Deno.serve(async (req) => {
       return reply({ success: true });
     }
     if (action === "list") {
-      const [pr, cr, rr, sr] = await Promise.all([
+      const [pr, cr, rr, sr, ar] = await Promise.all([
         db.from("wm_products").select("*").order("id", { ascending: false }),
         db.from("wm_customers").select("*").order("name"),
         db.from("wm_receivables").select("id,amount,due_date,status,installment_number,wm_customers(name,phone)").eq("status", "pending").order("due_date"),
-        db.from("wm_sales").select("total,cost_total")
+        db.from("wm_sales").select("customer_id,total,cost_total"),
+        db.from("wm_receivables").select("customer_id,amount,due_date,status,paid_at")
       ]);
-      for (const result of [pr, cr, rr, sr]) if (result.error) throw result.error;
+      for (const result of [pr, cr, rr, sr, ar]) if (result.error) throw result.error;
       const products = pr.data || [], sales = sr.data || [], today = new Date().toISOString().slice(0, 10);
       const charges = (rr.data || []).map((r: any) => ({ id:r.id, amount:Number(r.amount), dueDate:r.due_date, status:r.due_date<today?"overdue":"upcoming", installmentNumber:r.installment_number, customerName:r.wm_customers?.name||"Cliente", phone:r.wm_customers?.phone||"" }));
       const investment = products.reduce((sum:number,p:any)=>sum+Number(p.cost_price)*p.stock,0);
       const expectedRevenue = products.reduce((sum:number,p:any)=>sum+Number(p.sale_price)*p.stock,0);
       const pending = charges.reduce((sum:number,r:any)=>sum+r.amount,0);
+      const customerStats = new Map<number,{totalPurchased:number;purchaseCount:number;pendingBalance:number;overdueCount:number;latePayments:number}>();
+      const statsFor=(id:number)=>{if(!customerStats.has(id))customerStats.set(id,{totalPurchased:0,purchaseCount:0,pendingBalance:0,overdueCount:0,latePayments:0});return customerStats.get(id)!};
+      for(const sale of sales){if(sale.customer_id){const stat=statsFor(sale.customer_id);stat.totalPurchased+=Number(sale.total);stat.purchaseCount+=1}}
+      for(const item of ar.data||[]){if(!item.customer_id)continue;const stat=statsFor(item.customer_id);if(item.status==="pending"){stat.pendingBalance+=Number(item.amount);if(item.due_date<today)stat.overdueCount+=1}else if(item.status==="paid"&&item.paid_at&&item.paid_at.slice(0,10)>item.due_date){stat.latePayments+=1}}
       return reply({
         products:await Promise.all(products.map(async(p:any)=>({id:p.id,barcode:p.barcode,name:p.name,brand:p.brand,costPrice:Number(p.cost_price),salePrice:Number(p.sale_price),stock:p.stock,photoUrl:p.photo_path?(await db.storage.from("wm-product-images").createSignedUrl(p.photo_path,3600)).data?.signedUrl||null:null}))),
-        customers:(cr.data||[]).map((c:any)=>({id:c.id,name:c.name,phone:c.phone})),
+        customers:(cr.data||[]).map((c:any)=>{const stat=statsFor(c.id);const loyaltyLevel=stat.totalPurchased>=3000?"Diamante":stat.totalPurchased>=1500?"Ouro":stat.totalPurchased>=500?"Prata":stat.totalPurchased>0?"Bronze":"Novo";const paymentStatus=stat.purchaseCount===0?"Novo":stat.overdueCount>0?"Em atraso":stat.latePayments>0?"Atenção":"Em dia";return {id:c.id,name:c.name,phone:c.phone,...stat,loyaltyLevel,paymentStatus}}),
         charges,
         dashboard:{investment,expectedRevenue,expectedProfit:expectedRevenue-investment,salesTotal:sales.reduce((s:number,x:any)=>s+Number(x.total),0),received:0,pending,overdueCount:charges.filter((c:any)=>c.status==="overdue").length}
       });
