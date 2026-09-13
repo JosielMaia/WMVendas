@@ -10,7 +10,7 @@ type CartItem = Product & { quantity:number };
 type Catalog = { store:{ name:string; whatsapp:string; enabled:boolean }; products:Product[] };
 type OrderResult = { order:{ id:number; total:number; reference:string }; pix:{ key:string; holder:string; payload:string }; whatsapp:string };
 
-const API_URL = process.env.NEXT_PUBLIC_WM_API_URL || "https://ltkstlflqjqcuxzioaoa.supabase.co/functions/v1/wm-vendas-api";
+const API_URL = "/api/store";
 const money = (value:number) => new Intl.NumberFormat("pt-BR", { style:"currency", currency:"BRL" }).format(value);
 
 async function publicApi(action:string, payload:Record<string,unknown>={}) {
