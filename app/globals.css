@@ -91,5 +91,5 @@
 .product-dialog .dialog-actions button{width:100%;min-height:48px}
 }
 
-n/* Cancelar visivel no cadastro mobile */
+/* Cancelar visivel no cadastro mobile */
 @media(max-width:560px){.product-dialog .dialog-actions button:first-child{display:flex!important;visibility:visible!important;opacity:1!important;background:#f8edf2!important;color:#7b2448!important;border:1px solid #dfc9d2!important}.product-dialog .dialog-actions button:last-child{display:flex!important;visibility:visible!important;opacity:1!important}}
