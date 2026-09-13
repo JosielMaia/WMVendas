@@ -90,3 +90,6 @@
 .product-dialog .dialog-actions{position:absolute!important;left:0;right:0;bottom:0!important;margin:0!important;padding:12px 24px calc(12px + env(safe-area-inset-bottom))!important;background:#fff;border-top:1px solid var(--border);box-shadow:0 -10px 24px #4f102c18;display:grid!important;grid-template-columns:1fr 1.35fr!important;z-index:20}
 .product-dialog .dialog-actions button{width:100%;min-height:48px}
 }
+
+n/* Cancelar visivel no cadastro mobile */
+@media(max-width:560px){.product-dialog .dialog-actions button:first-child{display:flex!important;visibility:visible!important;opacity:1!important;background:#f8edf2!important;color:#7b2448!important;border:1px solid #dfc9d2!important}.product-dialog .dialog-actions button:last-child{display:flex!important;visibility:visible!important;opacity:1!important}}
