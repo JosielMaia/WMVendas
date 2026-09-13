@@ -51,3 +51,33 @@
 @media(min-width:700px){.product-detail-sheet{border-radius:28px}}
 @media(max-width:640px){.cart-list article{grid-template-columns:54px 1fr auto}.cart-thumb{width:54px;height:54px}.cart-list article>.quantity{grid-column:2}.cart-list article>strong{grid-column:3;grid-row:2}.cart-list .remove{grid-column:3;grid-row:1}.product-detail-sheet{padding:18px 14px}.detail-photo{height:260px}}
 
+
+
+/* Formulários mobile: ações sempre acessíveis */
+@media(max-width:560px){
+  [data-slot="dialog-content"]{
+    max-height:calc(100dvh - 16px);
+    overflow-y:auto;
+    overscroll-behavior:contain;
+  }
+  [data-slot="dialog-content"] .form{
+    padding-bottom:0;
+  }
+  [data-slot="dialog-content"] .dialog-actions{
+    position:sticky;
+    bottom:0;
+    z-index:10;
+    grid-column:1/-1;
+    display:grid;
+    grid-template-columns:1fr 1.35fr;
+    margin:10px -24px 0;
+    padding:12px 24px calc(12px + env(safe-area-inset-bottom));
+    background:#fff;
+    border-top:1px solid var(--border);
+    box-shadow:0 -10px 24px #4f102c12;
+  }
+  [data-slot="dialog-content"] .dialog-actions button{
+    width:100%;
+    min-height:46px;
+  }
+}
