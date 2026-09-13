@@ -203,13 +203,18 @@
 @media(max-width:560px){
   [data-slot="dialog-content"].product-dialog-v2{
     position:fixed!important;
-    inset:8px!important;
-    width:auto!important;
-    height:auto!important;
-    max-width:none!important;
-    max-height:none!important;
+    inset:auto!important;
+    left:50%!important;
+    top:50%!important;
+    right:auto!important;
+    bottom:auto!important;
+    width:calc(100vw - 16px)!important;
+    height:calc(100dvh - 16px)!important;
+    min-width:calc(100vw - 16px)!important;
+    max-width:calc(100vw - 16px)!important;
+    max-height:calc(100dvh - 16px)!important;
     margin:0!important;
-    transform:none!important;
+    transform:translate(-50%,-50%)!important;
     translate:none!important;
     display:flex!important;
     flex-direction:column!important;
