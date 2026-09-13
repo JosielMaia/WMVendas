@@ -51,3 +51,11 @@
 @media(min-width:700px){.product-detail-sheet{border-radius:28px}}
 @media(max-width:640px){.cart-list article{grid-template-columns:54px 1fr auto}.cart-thumb{width:54px;height:54px}.cart-list article>.quantity{grid-column:2}.cart-list article>strong{grid-column:3;grid-row:2}.cart-list .remove{grid-column:3;grid-row:1}.product-detail-sheet{padding:18px 14px}.detail-photo{height:260px}}
 
+/* Ajuste mobile mínimo: mantém a janela inteira dentro da tela */
+@media(max-width:560px){
+  [data-slot="dialog-content"].product-dialog{
+    max-height:calc(100dvh - 16px);
+    overflow-y:auto;
+    overscroll-behavior:contain;
+  }
+}
