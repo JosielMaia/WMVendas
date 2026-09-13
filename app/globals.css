@@ -93,3 +93,36 @@
 
 /* Cancelar visivel no cadastro mobile */
 @media(max-width:560px){.product-dialog .dialog-actions button:first-child{display:flex!important;visibility:visible!important;opacity:1!important;background:#f8edf2!important;color:#7b2448!important;border:1px solid #dfc9d2!important}.product-dialog .dialog-actions button:last-child{display:flex!important;visibility:visible!important;opacity:1!important}}
+
+
+/* Correcao definitiva do formulario de produto no celular */
+@media(max-width:560px){
+  .product-dialog{
+    top:50%!important;
+    bottom:auto!important;
+    width:calc(100% - 16px)!important;
+    height:auto!important;
+    max-height:calc(100dvh - 16px)!important;
+    transform:translate(-50%,-50%)!important;
+    display:grid!important;
+    overflow-y:auto!important;
+    padding:20px 18px!important;
+  }
+  .product-dialog .form{
+    display:grid!important;
+    flex:none!important;
+    min-height:auto!important;
+    overflow:visible!important;
+    padding:0!important;
+  }
+  .product-dialog .dialog-actions{
+    position:static!important;
+    display:grid!important;
+    grid-template-columns:1fr 1.35fr!important;
+    margin:12px 0 0!important;
+    padding:12px 0 calc(4px + env(safe-area-inset-bottom))!important;
+    background:#fff!important;
+    border-top:1px solid var(--border)!important;
+    box-shadow:none!important;
+  }
+}
