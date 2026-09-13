@@ -11,6 +11,7 @@ type Catalog = { store:{ name:string; whatsapp:string; enabled:boolean }; produc
 type OrderResult = { order:{ id:number; total:number; reference:string; status:string; paymentMethod:"pix"|"reservation" }; pix:{ key:string; holder:string; payload:string }|null; whatsapp:string };
 
 const API_URL = "/api/store";
+const STORE_BRANDS = ["Todas","Rommanel","Natura","O Boticário","Eudora","Avon","Amaggod","Jequiti","Vestuário","Acessórios","Cosméticos","Perfumaria","Outros"];
 const money = (value:number) => new Intl.NumberFormat("pt-BR", { style:"currency", currency:"BRL" }).format(value);
 
 async function publicApi(action:string, payload:Record<string,unknown>={}) {
@@ -38,7 +39,7 @@ export default function StorePage() {
   useEffect(()=>{try{const saved=localStorage.getItem("wm_store_cart");if(saved)setCart(JSON.parse(saved))}catch{}finally{setCartHydrated(true)}},[]);
   useEffect(()=>{if(cartHydrated)localStorage.setItem("wm_store_cart",JSON.stringify(cart))},[cart,cartHydrated]);
 
-  const brands=useMemo(()=>["Todas",...Array.from(new Set((catalog?.products||[]).map(p=>p.brand))).sort()],[catalog]);
+  const brands=useMemo(()=>Array.from(new Set([...STORE_BRANDS,...(catalog?.products||[]).map(p=>p.brand)])),[catalog]);
   const products=useMemo(()=>catalog?.products.filter(p=>(brand==="Todas"||p.brand===brand)&&`${p.name} ${p.brand}`.toLowerCase().includes(search.toLowerCase()))||[],[catalog,brand,search]);
   const count=cart.reduce((sum,item)=>sum+item.quantity,0);
   const total=cart.reduce((sum,item)=>sum+item.price*item.quantity,0);
@@ -65,7 +66,7 @@ export default function StorePage() {
     <header className="store-header"><div className="store-brand"><span>WM</span><div><strong>{catalog?.store.name||"WM Vendas"}</strong><small>Walquíria Maia</small></div></div><Link href="/" className="store-admin"><ArrowLeft/> Área da vendedora</Link></header>
     <section className="store-intro"><div><small>BELEZA QUE ENCANTA</small><h1>Escolha seus favoritos</h1><p>Semijoias, perfumes e cosméticos selecionados para você.</p></div><span className="store-sparkle">WM</span></section>
     <section className="store-tools"><label><Search/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar produtos…"/></label><div className="brand-pills">{brands.map(item=><button key={item} className={brand===item?"active":""} onClick={()=>setBrand(item)}>{item}</button>)}</div></section>
-    <section className="store-grid">{products.map(product=>{const item=cart.find(i=>i.id===product.id);return <article className="store-product" key={product.id}><button className="store-photo" onClick={()=>setSelectedProduct(product)} aria-label={`Ver detalhes de ${product.name}`}>{product.photoUrl?<Image src={product.photoUrl} alt={product.name} fill sizes="(max-width: 640px) 50vw, 260px" unoptimized/>:<ShoppingBag/>}<span>{product.brand}</span><i><Info/> Ver detalhes</i></button><div className="store-product-body"><h2 onClick={()=>setSelectedProduct(product)}>{product.name}</h2><strong>{money(product.price)}</strong><small>{product.stock===1?"Última unidade":`${product.stock} disponíveis`}</small>{item?<div className="quantity"><button onClick={()=>change(product,-1)} aria-label="Diminuir"><Minus/></button><b>{item.quantity}</b><button onClick={()=>change(product,1)} disabled={item.quantity>=product.stock} aria-label="Aumentar"><Plus/></button></div>:<button className="add-cart" onClick={()=>change(product,1)}><Plus/> Adicionar à cesta</button>}</div></article>})}</section>
+    <section className="store-grid">{products.map(product=>{const item=cart.find(i=>i.id===product.id);return <article className={product.stock>0?"store-product":"store-product sold-out"} key={product.id}><button className="store-photo" onClick={()=>setSelectedProduct(product)} aria-label={`Ver detalhes de ${product.name}`}>{product.photoUrl?<Image src={product.photoUrl} alt={product.name} fill sizes="(max-width: 640px) 50vw, 260px" unoptimized/>:<ShoppingBag/>}<span>{product.brand}</span><i><Info/> Ver detalhes</i></button><div className="store-product-body"><h2 onClick={()=>setSelectedProduct(product)}>{product.name}</h2><strong>{money(product.price)}</strong><small>{product.stock<1?"Produto esgotado":product.stock===1?"Última unidade":`${product.stock} disponíveis`}</small>{item?<div className="quantity"><button onClick={()=>change(product,-1)} aria-label="Diminuir"><Minus/></button><b>{item.quantity}</b><button onClick={()=>change(product,1)} disabled={item.quantity>=product.stock} aria-label="Aumentar"><Plus/></button></div>:<button className="add-cart" disabled={product.stock<1} onClick={()=>change(product,1)}>{product.stock<1?<><ShoppingBag/> Esgotado</>:<><Plus/> Adicionar à cesta</>}</button>}</div></article>})}</section>
     {!products.length&&<section className="store-empty"><ShoppingBag/><h2>Nenhum produto encontrado</h2><p>Tente outra busca ou categoria.</p></section>}
     {count>0&&<button className="cart-fab" onClick={()=>setCartOpen(true)}><span><ShoppingBag/><i>{count}</i></span><b>Ver sacola</b><strong>{money(total)}</strong></button>}
 
