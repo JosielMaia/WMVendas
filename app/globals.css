@@ -198,3 +198,73 @@
     box-shadow:none!important;
   }
 }
+
+/* Janela isolada do cadastro de produto no celular */
+@media(max-width:560px){
+  [data-slot="dialog-content"].product-dialog-v2{
+    position:fixed!important;
+    inset:8px!important;
+    width:auto!important;
+    height:auto!important;
+    max-width:none!important;
+    max-height:none!important;
+    margin:0!important;
+    transform:none!important;
+    translate:none!important;
+    display:flex!important;
+    flex-direction:column!important;
+    gap:0!important;
+    overflow:hidden!important;
+    padding:0!important;
+    border-radius:20px!important;
+  }
+
+  [data-slot="dialog-content"].product-dialog-v2 > [data-slot="dialog-header"]{
+    flex:0 0 auto;
+    padding:20px 20px 12px;
+  }
+
+  [data-slot="dialog-content"].product-dialog-v2 > .form{
+    flex:1 1 auto!important;
+    display:grid!important;
+    grid-template-columns:1fr 1fr!important;
+    gap:14px!important;
+    width:100%!important;
+    min-width:0!important;
+    min-height:0!important;
+    overflow-x:hidden!important;
+    overflow-y:auto!important;
+    overscroll-behavior:contain;
+    padding:4px 20px 20px!important;
+  }
+
+  [data-slot="dialog-content"].product-dialog-v2 .field{
+    min-width:0!important;
+  }
+
+  [data-slot="dialog-content"].product-dialog-v2 .dialog-actions{
+    position:sticky!important;
+    left:auto!important;
+    right:auto!important;
+    bottom:-20px!important;
+    z-index:30!important;
+    grid-column:1/-1!important;
+    display:grid!important;
+    grid-template-columns:1fr 1.35fr!important;
+    gap:10px!important;
+    width:auto!important;
+    margin:10px -20px -20px!important;
+    padding:12px 20px calc(12px + env(safe-area-inset-bottom))!important;
+    background:#fff!important;
+    border-top:1px solid var(--border)!important;
+    box-shadow:0 -10px 24px #4f102c18!important;
+  }
+
+  [data-slot="dialog-content"].product-dialog-v2 .dialog-actions button{
+    display:flex!important;
+    visibility:visible!important;
+    width:100%!important;
+    min-height:48px!important;
+    opacity:1!important;
+  }
+}
