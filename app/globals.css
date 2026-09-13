@@ -126,3 +126,34 @@
     box-shadow:none!important;
   }
 }
+
+
+/* Ajuste de posicionamento do cadastro mobile */
+@media(max-width:560px){
+  .product-dialog{
+    left:50%!important;
+    top:50%!important;
+    right:auto!important;
+    bottom:auto!important;
+    width:calc(100vw - 16px)!important;
+    max-width:calc(100vw - 16px)!important;
+    max-height:calc(100dvh - 16px)!important;
+    transform:none!important;
+    translate:-50% -50%!important;
+    overflow-y:auto!important;
+  }
+  .product-dialog .form{
+    width:100%!important;
+    min-width:0!important;
+    overflow:visible!important;
+  }
+  .product-dialog .field{
+    min-width:0!important;
+  }
+  .product-dialog .dialog-actions{
+    position:sticky!important;
+    bottom:-20px!important;
+    z-index:30!important;
+    background:#fff!important;
+  }
+}
