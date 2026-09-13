@@ -102,7 +102,9 @@ Deno.serve(async (req) => {
     if (action === "create_store_order") {
       const tenantId = await getWmTenantId();
       const paymentMethod = String(body.paymentMethod || "pix");
-      if (!["pix", "reservation"].includes(paymentMethod)) return reply({ error: "Forma de pagamento inválida." }, 400);
+      if (!["pix", "reservation", "deposit"].includes(paymentMethod)) return reply({ error: "Forma de pagamento inválida." }, 400);
+      const depositPercent = paymentMethod === "deposit" ? Number(body.depositPercent) : null;
+      if (paymentMethod === "deposit" && ![20, 30].includes(depositPercent as number)) return reply({ error: "Escolha uma entrada de 20% ou 30%." }, 400);
       const { data: settings, error: settingsError } = await db.from("wm_store_settings").select("*").eq("tenant_id", tenantId).maybeSingle();
       if (settingsError) throw settingsError;
       if (!settings) throw new Error("Configurações da loja não encontradas.");
@@ -125,15 +127,25 @@ Deno.serve(async (req) => {
       if (orderError) return reply({ error: orderError.message }, 400);
       await db.from("wm_store_order_attempts").insert({ client_key: orderClientKey });
       const reference = `WM${order.id}`;
-      const pixPayload = paymentMethod === "pix"
-        ? buildPixPayload(String(settings.pix_key), String(settings.pix_holder_name), String(settings.pix_city), Number(order.total), reference)
+      const total = Number(order.total);
+      const depositAmount = paymentMethod === "deposit" ? Math.round(total * (depositPercent as number)) / 100 : null;
+      const balanceDue = depositAmount === null ? null : Math.round((total - depositAmount) * 100) / 100;
+      const pixAmount = paymentMethod === "deposit" ? depositAmount : total;
+      const pixPayload = ["pix", "deposit"].includes(paymentMethod)
+        ? buildPixPayload(String(settings.pix_key), String(settings.pix_holder_name), String(settings.pix_city), Number(pixAmount), reference)
         : null;
-      if (pixPayload) {
-        const { error: updateError } = await db.from("wm_store_orders").update({ pix_payload: pixPayload, updated_at: new Date().toISOString() }).eq("id", order.id).eq("tenant_id", tenantId);
+      if (pixPayload || paymentMethod === "deposit") {
+        const { error: updateError } = await db.from("wm_store_orders").update({
+          pix_payload: pixPayload,
+          deposit_percent: depositPercent,
+          deposit_amount: depositAmount,
+          balance_due: balanceDue,
+          updated_at: new Date().toISOString()
+        }).eq("id", order.id).eq("tenant_id", tenantId);
         if (updateError) throw updateError;
       }
       return reply({
-        order: { id: order.id, publicId: order.publicId, total: Number(order.total), reference, status: order.status, paymentMethod },
+        order: { id: order.id, publicId: order.publicId, total, reference, status: order.status, paymentMethod, depositPercent, depositAmount, balanceDue },
         pix: pixPayload ? { key: settings.pix_key, holder: settings.pix_holder_name, payload: pixPayload } : null,
         whatsapp: settings.whatsapp
       }, 201);
