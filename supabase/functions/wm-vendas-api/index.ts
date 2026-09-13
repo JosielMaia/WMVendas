@@ -100,31 +100,41 @@ Deno.serve(async (req) => {
     }
 
     if (action === "create_store_order") {
-      const { data: settings, error: settingsError } = await db.from("wm_store_settings").select("*").eq("id", true).single();
+      const tenantId = await getWmTenantId();
+      const paymentMethod = String(body.paymentMethod || "pix");
+      if (!["pix", "reservation"].includes(paymentMethod)) return reply({ error: "Forma de pagamento inválida." }, 400);
+      const { data: settings, error: settingsError } = await db.from("wm_store_settings").select("*").eq("tenant_id", tenantId).maybeSingle();
       if (settingsError) throw settingsError;
+      if (!settings) throw new Error("Configurações da loja não encontradas.");
       if (!settings.store_enabled) return reply({ error: "A loja está temporariamente fechada." }, 503);
-      if (!String(settings.pix_key || "").trim()) return reply({ error: "O PIX da loja ainda não foi configurado." }, 503);
+      if (paymentMethod === "pix" && !String(settings.pix_key || "").trim()) return reply({ error: "O PIX da loja ainda não foi configurado." }, 503);
       const orderClientKey = await sha((req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for") || "unknown") + "|" + (req.headers.get("user-agent") || ""));
       const orderWindow = new Date(Date.now() - 60 * 60_000).toISOString();
       const { count: recentOrders } = await db.from("wm_store_order_attempts").select("*", { count: "exact", head: true }).eq("client_key", orderClientKey).gte("attempted_at", orderWindow);
       if ((recentOrders || 0) >= 10) return reply({ error: "Muitos pedidos neste aparelho. Tente novamente mais tarde." }, 429);
       const items = Array.isArray(body.items) ? body.items.slice(0, 30) : [];
-      const { data: order, error: orderError } = await db.rpc("wm_create_store_order", {
+      const { data: order, error: orderError } = await db.rpc("wm_create_store_order_v2", {
+        p_tenant_id: tenantId,
         p_customer_name: String(body.customerName || ""),
         p_phone: String(body.phone || ""),
         p_delivery_type: String(body.deliveryType || "retirada"),
         p_address: String(body.address || ""),
+        p_payment_method: paymentMethod,
         p_items: items
       });
       if (orderError) return reply({ error: orderError.message }, 400);
       await db.from("wm_store_order_attempts").insert({ client_key: orderClientKey });
       const reference = `WM${order.id}`;
-      const pixPayload = buildPixPayload(String(settings.pix_key), String(settings.pix_holder_name), String(settings.pix_city), Number(order.total), reference);
-      const { error: updateError } = await db.from("wm_store_orders").update({ pix_payload: pixPayload, updated_at: new Date().toISOString() }).eq("id", order.id);
-      if (updateError) throw updateError;
+      const pixPayload = paymentMethod === "pix"
+        ? buildPixPayload(String(settings.pix_key), String(settings.pix_holder_name), String(settings.pix_city), Number(order.total), reference)
+        : null;
+      if (pixPayload) {
+        const { error: updateError } = await db.from("wm_store_orders").update({ pix_payload: pixPayload, updated_at: new Date().toISOString() }).eq("id", order.id).eq("tenant_id", tenantId);
+        if (updateError) throw updateError;
+      }
       return reply({
-        order: { id: order.id, publicId: order.publicId, total: Number(order.total), reference },
-        pix: { key: settings.pix_key, holder: settings.pix_holder_name, payload: pixPayload },
+        order: { id: order.id, publicId: order.publicId, total: Number(order.total), reference, status: order.status, paymentMethod },
+        pix: pixPayload ? { key: settings.pix_key, holder: settings.pix_holder_name, payload: pixPayload } : null,
         whatsapp: settings.whatsapp
       }, 201);
     }
@@ -146,9 +156,10 @@ Deno.serve(async (req) => {
     const session = await requireSession(req);
     if (!session) return reply({ error: "Sessão expirada. Entre novamente." }, 401);
     if (action === "store_admin") {
+      const tenantId = await getWmTenantId();
       const [{ data: settings, error: settingsError }, { data: orders, error: ordersError }] = await Promise.all([
-        db.from("wm_store_settings").select("*").eq("id", true).single(),
-        db.from("wm_store_orders").select("id,public_id,customer_name,phone,delivery_type,address,total,status,pix_payload,paid_at,created_at,wm_store_order_items(product_name,unit_price,quantity,line_total)").order("created_at", { ascending: false }).limit(100)
+        db.from("wm_store_settings").select("*").eq("tenant_id", tenantId).maybeSingle(),
+        db.from("wm_store_orders").select("id,public_id,customer_name,phone,delivery_type,address,total,status,payment_method,reservation_expires_at,pix_payload,paid_at,created_at,wm_store_order_items(product_name,unit_price,quantity,line_total)").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(100)
       ]);
       if (settingsError) throw settingsError;
       if (ordersError) throw ordersError;
@@ -170,6 +181,8 @@ Deno.serve(async (req) => {
           address: o.address,
           total: Number(o.total),
           status: o.status,
+          paymentMethod: o.payment_method,
+          reservationExpiresAt: o.reservation_expires_at,
           pixPayload: o.pix_payload,
           paidAt: o.paid_at,
           createdAt: o.created_at,
@@ -199,7 +212,7 @@ Deno.serve(async (req) => {
     if (action === "update_store_order_status") {
       const id = Number(body.id);
       const status = String(body.status || "");
-      if (!Number.isInteger(id) || !["paid","preparing","completed","cancelled"].includes(status)) return reply({ error: "Pedido ou status inválido." }, 400);
+      if (!Number.isInteger(id) || !["reserved","paid","preparing","completed","cancelled"].includes(status)) return reply({ error: "Pedido ou status inválido." }, 400);
       if (status === "cancelled") {
         const { error: cancelError } = await db.rpc("wm_cancel_store_order", { p_order_id: id });
         if (cancelError) return reply({ error: cancelError.message }, 400);
