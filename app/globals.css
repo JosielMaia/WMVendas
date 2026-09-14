@@ -82,3 +82,13 @@
 .finance-stats{grid-template-columns:repeat(4,minmax(0,1fr))}.finance-form{margin-bottom:18px}.finance-list{margin-top:18px}.cash-entry{display:grid;grid-template-columns:40px minmax(0,1fr) auto;align-items:center;gap:12px;padding:14px 0}.cash-entry+.cash-entry{border-top:1px solid #f0e4e9}.cash-entry>span{width:36px;height:36px;display:grid;place-items:center;border-radius:12px;font-size:21px;font-weight:900}.cash-in{background:#e8f5ee;color:#26734f}.cash-out{background:#fff0f1;color:#ae3847}.cash-entry b,.cash-entry small{display:block}.cash-entry small{margin-top:4px;color:#866f78}.cash-entry>strong{white-space:nowrap}.positive{color:#26734f}.negative{color:#ae3847}
 @media(max-width:900px){.finance-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:640px){.finance-stats{grid-template-columns:1fr 1fr}.finance-stats .stat{min-height:130px;padding:16px}.finance-stats .stat strong{font-size:22px}.cash-entry{grid-template-columns:36px minmax(0,1fr)}.cash-entry>strong{grid-column:2}.bottom-nav{grid-template-columns:repeat(8,minmax(64px,1fr));overflow-x:auto;justify-content:flex-start}.bottom-nav button{min-width:64px}}
+
+
+/* Correção de alinhamento do Caixa */
+.finance-stats{align-items:stretch}
+.finance-stats .stat{min-width:0;width:100%;overflow:hidden;display:grid;align-content:start}
+.finance-stats .stat strong{max-width:100%;font-size:clamp(21px,2.2vw,26px);overflow-wrap:anywhere}
+.finance-list,.finance-form{min-width:0;max-width:100%;overflow:hidden}
+.cash-entry>div{min-width:0}.cash-entry b,.cash-entry small{overflow-wrap:anywhere}
+@media(max-width:1180px){.finance-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.finance-stats{grid-template-columns:minmax(0,1fr)}.finance-stats .stat{min-height:auto;padding:18px}.finance-list .panel-head{align-items:flex-start;gap:10px;flex-wrap:wrap}.cash-entry{grid-template-columns:36px minmax(0,1fr)}.cash-entry>strong{grid-column:2;white-space:normal}}
