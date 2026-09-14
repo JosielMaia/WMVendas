@@ -81,6 +81,8 @@ Deno.serve(async (req) => {
 
     if (action === "public_catalog") {
       const tenantId = await getWmTenantId();
+      const { error: expireError } = await db.rpc("wm_expire_store_reservations", { p_tenant_id: tenantId });
+      if (expireError) throw expireError;
       const [{ data: settings, error: settingsError }, { data: products, error: productsError }] = await Promise.all([
         db.from("wm_store_settings").select("store_name,whatsapp,store_enabled").eq("tenant_id", tenantId).maybeSingle(),
         db.from("wm_products").select("id,name,brand,sale_price,stock,photo_path").eq("tenant_id", tenantId).gt("sale_price", 0).order("name")
@@ -168,8 +170,40 @@ Deno.serve(async (req) => {
     const session = await requireSession(req);
     if (!session) return reply({ error: "Sessão expirada. Entre novamente." }, 401);
     if (action === "session_check") return reply({ authenticated: true });
+    if (action === "finance_report") {
+      const tenantId = await getWmTenantId();
+      const requestedStart = String(body.startDate || "");
+      const startDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedStart) ? requestedStart : new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString().slice(0,10);
+      const [cash, sales, paidReceivables, paidBills] = await Promise.all([
+        db.from("wm_cash_entries").select("id,kind,category,description,amount,payment_method,occurred_at").eq("tenant_id",tenantId).gte("occurred_at",startDate).order("occurred_at",{ascending:false}).limit(200),
+        db.from("wm_sales").select("total,cost_total,payment_method,sold_at").eq("tenant_id",tenantId).gte("sold_at",startDate),
+        db.from("wm_receivables").select("amount,paid_at").eq("tenant_id",tenantId).eq("status","paid").gte("paid_at",startDate),
+        db.from("wm_supplier_bills").select("amount,paid_at").eq("tenant_id",tenantId).eq("status","paid").gte("paid_at",startDate)
+      ]);
+      for (const result of [cash,sales,paidReceivables,paidBills]) if (result.error) throw result.error;
+      const entries = cash.data || [], saleRows = sales.data || [];
+      const instantSales = saleRows.filter((sale:any)=>sale.payment_method!=="parcelado").reduce((sum:number,sale:any)=>sum+Number(sale.total),0);
+      const installmentReceipts = (paidReceivables.data||[]).reduce((sum:number,item:any)=>sum+Number(item.amount),0);
+      const manualIncome = entries.filter((item:any)=>item.kind==="income").reduce((sum:number,item:any)=>sum+Number(item.amount),0);
+      const manualExpense = entries.filter((item:any)=>item.kind==="expense").reduce((sum:number,item:any)=>sum+Number(item.amount),0);
+      const supplierExpense = (paidBills.data||[]).reduce((sum:number,item:any)=>sum+Number(item.amount),0);
+      const costOfGoods = saleRows.reduce((sum:number,sale:any)=>sum+Number(sale.cost_total),0);
+      const income = instantSales + installmentReceipts + manualIncome;
+      const expenses = manualExpense + supplierExpense;
+      return reply({ startDate, summary:{ income, expenses, balance:income-expenses, sales:instantSales+installmentReceipts, costOfGoods, estimatedProfit:income-expenses-costOfGoods }, entries:entries.map((item:any)=>({id:item.id,kind:item.kind,category:item.category,description:item.description,amount:Number(item.amount),paymentMethod:item.payment_method,occurredAt:item.occurred_at})) });
+    }
+    if (action === "create_cash_entry") {
+      const tenantId = await getWmTenantId();
+      const kind = String(body.kind||"expense"), description = String(body.description||"").trim(), amount = Number(body.amount);
+      if (!["income","expense"].includes(kind)||description.length<2||!Number.isFinite(amount)||amount<=0) return reply({error:"Informe tipo, descrição e valor válidos."},400);
+      const { error } = await db.from("wm_cash_entries").insert({tenant_id:tenantId,kind,category:String(body.category||"Outros").slice(0,60),description:description.slice(0,160),amount,payment_method:String(body.paymentMethod||"other").slice(0,30),occurred_at:String(body.occurredAt||new Date().toISOString())});
+      if (error) throw error;
+      return reply({message:kind==="expense"?"Despesa registrada.":"Entrada registrada."},201);
+    }
     if (action === "store_admin") {
       const tenantId = await getWmTenantId();
+      const { error: expireError } = await db.rpc("wm_expire_store_reservations", { p_tenant_id: tenantId });
+      if (expireError) throw expireError;
       const [{ data: settings, error: settingsError }, { data: orders, error: ordersError }] = await Promise.all([
         db.from("wm_store_settings").select("*").eq("tenant_id", tenantId).maybeSingle(),
         db.from("wm_store_orders").select("id,public_id,customer_name,phone,delivery_type,address,total,status,payment_method,reservation_expires_at,pix_payload,paid_at,created_at,wm_store_order_items(product_name,unit_price,quantity,line_total)").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(100)
