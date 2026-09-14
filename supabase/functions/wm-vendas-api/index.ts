@@ -168,6 +168,22 @@ Deno.serve(async (req) => {
     const session = await requireSession(req);
     if (!session) return reply({ error: "Sessão expirada. Entre novamente." }, 401);
     if (action === "session_check") return reply({ authenticated: true });
+    if (action === "barcode_lookup") {
+      const barcode=String(body.barcode||"").trim();
+      if(!/^[A-Za-z0-9._-]{4,40}$/.test(barcode))return reply({error:"Código de barras inválido."},400);
+      const tenantId=await getWmTenantId();
+      const {data:owned,error:ownedError}=await db.from("wm_products").select("name,brand,photo_path").eq("tenant_id",tenantId).eq("barcode",barcode).maybeSingle();
+      if(ownedError)throw ownedError;
+      if(owned){
+        let imageUrl=null;
+        if(owned.photo_path)imageUrl=(await db.storage.from("wm-product-images").createSignedUrl(owned.photo_path,3600)).data?.signedUrl||null;
+        return reply({found:true,product:{barcode,name:owned.name,brand:owned.brand,category:"Outros",imageUrl,source:"WM Vendas"}});
+      }
+      const {data:catalog,error:catalogError}=await db.from("wm_product_catalog").select("barcode,name,brand,category,image_url,source").eq("barcode",barcode).maybeSingle();
+      if(catalogError)throw catalogError;
+      if(!catalog)return reply({found:false});
+      return reply({found:true,product:{barcode:catalog.barcode,name:catalog.name,brand:catalog.brand,category:catalog.category,imageUrl:catalog.image_url,source:catalog.source}});
+    }
     if (action === "finance_report") {
       const tenantId = await getWmTenantId();
       const requestedStart = String(body.startDate || "");
@@ -330,7 +346,7 @@ Deno.serve(async (req) => {
         if(error.code==="23505")return reply({error:"Este código já está cadastrado."},409);
         throw error
       }
-      return reply({message:"Produto cadastrado com sucesso"});
+      await db.from("wm_product_catalog").upsert({barcode,name,brand:String(body.brand||"Outros"),source:"wm_products",verified_at:new Date().toISOString(),updated_at:new Date().toISOString()},{onConflict:"barcode"});\n      return reply({message:"Produto cadastrado com sucesso"});
     }
     if (action === "update_product") {
       const id=Number(body.id), barcode=String(body.barcode||"").trim(), name=String(body.name||"").trim();
@@ -359,7 +375,7 @@ Deno.serve(async (req) => {
         throw error
       }
       if(oldPhotoPath&&oldPhotoPath!==nextPhotoPath)await db.storage.from("wm-product-images").remove([oldPhotoPath]);
-      return reply({message:"Produto atualizado com sucesso"});
+      await db.from("wm_product_catalog").upsert({barcode,name,brand:String(body.brand||"Outros"),source:"wm_products",verified_at:new Date().toISOString(),updated_at:new Date().toISOString()},{onConflict:"barcode"});\n      return reply({message:"Produto atualizado com sucesso"});
     }
     if (action === "create_customer") {
       const name=String(body.name||"").trim();if(!name)return reply({error:"Informe o nome da cliente."},400);
