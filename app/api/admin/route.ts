@@ -1,6 +1,6 @@
 const ADMIN_API = "https://ltkstlflqjqcuxzioaoa.supabase.co/functions/v1/wm-vendas-api";
 const ADMIN_ACTIONS = new Set([
-  "login", "logout", "list", "store_admin", "update_store_settings",
+  "login", "logout", "session_check", "list", "store_admin", "update_store_settings",
   "update_store_order_status", "create_product", "update_product",
   "create_customer", "create_sale", "mark_paid", "create_supplier_bill",
   "mark_supplier_bill_paid",
