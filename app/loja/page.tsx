@@ -35,7 +35,23 @@ export default function StorePage() {
   const [paymentMethod,setPaymentMethod]=useState<"pix"|"reservation"|"deposit">("pix");
   const [depositPercent,setDepositPercent]=useState<20|30>(20);
 
-  useEffect(()=>{publicApi("public_catalog").then(setCatalog).catch(e=>setError(e instanceof Error?e.message:"Não foi possível abrir a loja."))},[]);
+  useEffect(()=>{
+    let active=true;
+    async function loadCatalog(){
+      for(let attempt=1;attempt<=3;attempt++){
+        try{
+          const result=await publicApi("public_catalog");
+          if(active){setCatalog(result);setError("")}
+          return;
+        }catch(e){
+          if(attempt===3&&active)setError(e instanceof Error?e.message:"Não foi possível abrir a loja.");
+          else await new Promise(resolve=>setTimeout(resolve,attempt*700));
+        }
+      }
+    }
+    void loadCatalog();
+    return()=>{active=false};
+  },[]);
   useEffect(()=>{try{const saved=localStorage.getItem("wm_store_cart");if(saved)setCart(JSON.parse(saved))}catch{}finally{setCartHydrated(true)}},[]);
   useEffect(()=>{if(cartHydrated)localStorage.setItem("wm_store_cart",JSON.stringify(cart))},[cart,cartHydrated]);
 
