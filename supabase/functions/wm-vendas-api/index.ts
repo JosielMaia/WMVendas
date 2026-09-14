@@ -346,7 +346,8 @@ Deno.serve(async (req) => {
         if(error.code==="23505")return reply({error:"Este código já está cadastrado."},409);
         throw error
       }
-      await db.from("wm_product_catalog").upsert({barcode,name,brand:String(body.brand||"Outros"),source:"wm_products",verified_at:new Date().toISOString(),updated_at:new Date().toISOString()},{onConflict:"barcode"});\n      return reply({message:"Produto cadastrado com sucesso"});
+      await db.from("wm_product_catalog").upsert({barcode,name,brand:String(body.brand||"Outros"),source:"wm_products",verified_at:new Date().toISOString(),updated_at:new Date().toISOString()},{onConflict:"barcode"});
+      return reply({message:"Produto cadastrado com sucesso"});
     }
     if (action === "update_product") {
       const id=Number(body.id), barcode=String(body.barcode||"").trim(), name=String(body.name||"").trim();
@@ -375,7 +376,8 @@ Deno.serve(async (req) => {
         throw error
       }
       if(oldPhotoPath&&oldPhotoPath!==nextPhotoPath)await db.storage.from("wm-product-images").remove([oldPhotoPath]);
-      await db.from("wm_product_catalog").upsert({barcode,name,brand:String(body.brand||"Outros"),source:"wm_products",verified_at:new Date().toISOString(),updated_at:new Date().toISOString()},{onConflict:"barcode"});\n      return reply({message:"Produto atualizado com sucesso"});
+      await db.from("wm_product_catalog").upsert({barcode,name,brand:String(body.brand||"Outros"),source:"wm_products",verified_at:new Date().toISOString(),updated_at:new Date().toISOString()},{onConflict:"barcode"});
+      return reply({message:"Produto atualizado com sucesso"});
     }
     if (action === "create_customer") {
       const name=String(body.name||"").trim();if(!name)return reply({error:"Informe o nome da cliente."},400);
