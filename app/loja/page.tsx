@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Check, ChevronRight, Clock3, Copy, Info, Loader2, Minus, Plus, Search, ShieldCheck, ShoppingBag, Store, Trash2, LogOut, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, Clock3, Copy, Info, Loader2, Minus, Plus, Search, ShieldCheck, ShoppingBag, Store, Trash2, LogOut, X } from "lucide-react";
 
 type Product = { id:number; name:string; brand:string; price:number; stock:number; photoUrl?:string|null };
 type CartItem = Product & { quantity:number };
@@ -34,6 +35,7 @@ export default function StorePage() {
   const [selectedProduct,setSelectedProduct]=useState<Product|null>(null);
   const [paymentMethod,setPaymentMethod]=useState<"pix"|"reservation"|"deposit">("pix");
   const [depositPercent,setDepositPercent]=useState<20|30>(20);
+  const [sellerMode,setSellerMode]=useState(false);
 
   useEffect(()=>{
     let active=true;
@@ -53,6 +55,14 @@ export default function StorePage() {
     return()=>{active=false};
   },[]);
   useEffect(()=>{try{const saved=localStorage.getItem("wm_store_cart");if(saved)setCart(JSON.parse(saved))}catch{}finally{setCartHydrated(true)}},[]);
+  useEffect(()=>{
+    const token=localStorage.getItem("wm_session");
+    if(!token)return;
+    fetch("/api/admin",{method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${token}`},body:JSON.stringify({action:"session_check"})})
+      .then(response=>response.ok?response.json():Promise.reject())
+      .then(result=>setSellerMode(result.authenticated===true))
+      .catch(()=>setSellerMode(false));
+  },[]);
   useEffect(()=>{if(cartHydrated)localStorage.setItem("wm_store_cart",JSON.stringify(cart))},[cart,cartHydrated]);
 
   const brands=useMemo(()=>Array.from(new Set([...STORE_BRANDS,...(catalog?.products||[]).map(p=>p.brand)])),[catalog]);
@@ -81,7 +91,7 @@ export default function StorePage() {
   if(catalog&&!catalog.store.enabled)return <main className="store-loading"><Store/><h1>Voltamos em breve</h1><p>A loja está temporariamente fechada.</p></main>;
 
   return <main className="store-page">
-    <header className="store-header"><div className="store-brand"><span>WM</span><div><strong>{catalog?.store.name||"WM Vendas"}</strong><small>Walquíria Maia</small></div></div><button type="button" className="store-exit" onClick={exitStore}><LogOut/> Sair da loja</button></header>
+    <header className="store-header"><div className="store-brand"><span>WM</span><div><strong>{catalog?.store.name||"WM Vendas"}</strong><small>Walquíria Maia</small></div></div><div className="store-header-actions">{sellerMode&&<Link href="/" className="store-return"><ArrowLeft/> Voltar à gestão</Link>}<button type="button" className="store-exit" onClick={exitStore}><LogOut/> Sair da loja</button></div></header>
     <section className="store-intro"><div><small>BELEZA QUE ENCANTA</small><h1>Escolha seus favoritos</h1><p>Semijoias, perfumes e cosméticos selecionados para você.</p></div><span className="store-sparkle">WM</span></section>
     <section className="store-tools"><label><Search/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar produtos…"/></label><div className="brand-pills">{brands.map(item=><button key={item} className={brand===item?"active":""} onClick={()=>setBrand(item)}>{item}</button>)}</div></section>
     <section className="store-grid">{products.map(product=>{const item=cart.find(i=>i.id===product.id);return <article className={product.stock>0?"store-product":"store-product sold-out"} key={product.id}><button className="store-photo" onClick={()=>setSelectedProduct(product)} aria-label={`Ver detalhes de ${product.name}`}>{product.photoUrl?<Image src={product.photoUrl} alt={product.name} fill sizes="(max-width: 640px) 50vw, 260px" unoptimized/>:<ShoppingBag/>}<span>{product.brand}</span><i><Info/> Ver detalhes</i></button><div className="store-product-body"><h2 onClick={()=>setSelectedProduct(product)}>{product.name}</h2><strong>{money(product.price)}</strong><small>{product.stock<1?"Produto esgotado":product.stock===1?"Última unidade":`${product.stock} disponíveis`}</small>{item?<div className="quantity"><button onClick={()=>change(product,-1)} aria-label="Diminuir"><Minus/></button><b>{item.quantity}</b><button onClick={()=>change(product,1)} disabled={item.quantity>=product.stock} aria-label="Aumentar"><Plus/></button></div>:<button className="add-cart" disabled={product.stock<1} onClick={()=>change(product,1)}>{product.stock<1?<><ShoppingBag/> Esgotado</>:<><Plus/> Adicionar à cesta</>}</button>}</div></article>})}</section>
