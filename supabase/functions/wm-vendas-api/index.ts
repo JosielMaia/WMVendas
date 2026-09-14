@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
       if (expireError) throw expireError;
       const [{ data: settings, error: settingsError }, { data: products, error: productsError }] = await Promise.all([
         db.from("wm_store_settings").select("store_name,whatsapp,store_enabled").eq("tenant_id", tenantId).maybeSingle(),
-        db.from("wm_products").select("id,name,brand,sale_price,stock,photo_path").eq("tenant_id", tenantId).gt("sale_price", 0).order("name")
+        db.from("wm_products").select("id,name,brand,sale_price,stock,photo_path,catalog_image_url").eq("tenant_id", tenantId).gt("sale_price", 0).order("name")
       ]);
       if (settingsError) throw settingsError;
       if (productsError) throw productsError;
@@ -94,7 +94,7 @@ Deno.serve(async (req) => {
         brand: p.brand,
         price: Number(p.sale_price),
         stock: p.stock,
-        photoUrl: p.photo_path ? (await db.storage.from("wm-product-images").createSignedUrl(p.photo_path, 3600)).data?.signedUrl || null : null
+        photoUrl: p.photo_path ? (await db.storage.from("wm-product-images").createSignedUrl(p.photo_path, 3600)).data?.signedUrl || null : p.catalog_image_url || null
       })));
       return reply({ store: { name: settings.store_name, whatsapp: settings.whatsapp, enabled: settings.store_enabled }, products: catalog });
     }
@@ -318,7 +318,7 @@ Deno.serve(async (req) => {
         if(!signedError) for(const item of signedPhotos||[]) if(item.path&&item.signedUrl)signedByPath.set(item.path,item.signedUrl);
       }
       return reply({
-        products:products.map((p:any)=>({id:p.id,barcode:p.barcode,name:p.name,brand:p.brand,costPrice:Number(p.cost_price),salePrice:Number(p.sale_price),stock:p.stock,photoUrl:p.photo_path?signedByPath.get(p.photo_path)||null:null})),
+        products:products.map((p:any)=>({id:p.id,barcode:p.barcode,name:p.name,brand:p.brand,costPrice:Number(p.cost_price),salePrice:Number(p.sale_price),stock:p.stock,photoUrl:p.photo_path?signedByPath.get(p.photo_path)||null:p.catalog_image_url||null})),
         customers:(cr.data||[]).map((c:any)=>{const stat=statsFor(c.id);const loyaltyLevel=stat.totalPurchased>=3000?"Diamante":stat.totalPurchased>=1500?"Ouro":stat.totalPurchased>=500?"Prata":stat.totalPurchased>0?"Bronze":"Novo";const paymentStatus=stat.purchaseCount===0?"Novo":stat.overdueCount>0?"Em atraso":stat.latePayments>0?"Atenção":"Em dia";return {id:c.id,name:c.name,phone:c.phone,...stat,loyaltyLevel,paymentStatus}}),
         charges,
         supplierBills,
@@ -340,7 +340,7 @@ Deno.serve(async (req) => {
         const {error:uploadError}=await db.storage.from("wm-product-images").upload(photoPath,bytes,{contentType:match[1],cacheControl:"3600",upsert:false});
         if(uploadError)throw uploadError;
       }
-      const { error }=await db.from("wm_products").insert({barcode,name,brand:String(body.brand||"Outros"),cost_price:Number(body.costPrice||0),sale_price:Number(body.salePrice||0),stock:Math.max(0,Number(body.stock||0)),photo_path:photoPath});
+      const { error }=await db.from("wm_products").insert({barcode,name,brand:String(body.brand||"Outros"),cost_price:Number(body.costPrice||0),sale_price:Number(body.salePrice||0),stock:Math.max(0,Number(body.stock||0)),photo_path:photoPath,catalog_image_url:String(body.catalogImageUrl||"")||null});
       if(error){
         if(photoPath)await db.storage.from("wm-product-images").remove([photoPath]);
         if(error.code==="23505")return reply({error:"Este código já está cadastrado."},409);
@@ -369,7 +369,7 @@ Deno.serve(async (req) => {
         if(uploadError)throw uploadError;
         nextPhotoPath=uploadedPhotoPath;
       }else if(body.removePhoto===true){nextPhotoPath=null}
-      const {error}=await db.from("wm_products").update({barcode,name,brand:String(body.brand||"Outros"),cost_price:Number(body.costPrice||0),sale_price:Number(body.salePrice||0),stock:Math.max(0,Number(body.stock||0)),photo_path:nextPhotoPath}).eq("id",id);
+      const {error}=await db.from("wm_products").update({barcode,name,brand:String(body.brand||"Outros"),cost_price:Number(body.costPrice||0),sale_price:Number(body.salePrice||0),stock:Math.max(0,Number(body.stock||0)),photo_path:nextPhotoPath,catalog_image_url:String(body.catalogImageUrl||"")||null}).eq("id",id);
       if(error){
         if(uploadedPhotoPath)await db.storage.from("wm-product-images").remove([uploadedPhotoPath]);
         if(error.code==="23505")return reply({error:"Este código já está cadastrado em outro produto."},409);
