@@ -1,4 +1,4 @@
-const CACHE = "wm-vendas-v17";
+const CACHE = "wm-vendas-v18";
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(["/", "/favicon.svg", "/manifest.webmanifest"])));
   self.skipWaiting();
