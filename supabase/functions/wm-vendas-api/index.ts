@@ -372,7 +372,8 @@ Deno.serve(async (req) => {
         p_payment_method:String(body.paymentMethod||"pix"),
         p_installments:Number(body.installments||1),
         p_due_date:String(body.dueDate||new Date(Date.now()+30*86400_000).toISOString().slice(0,10)),
-        p_discount:Number(body.discount||0)
+        p_discount:Number(body.discount||0),
+        p_operation_id:String(body.operationId||"")
       });
       if(error)return reply({error:error.message},400);
       return reply({message:"Venda concluída com sucesso",receipt:data});
