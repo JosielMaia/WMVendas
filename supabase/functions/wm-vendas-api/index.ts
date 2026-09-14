@@ -12,16 +12,14 @@ const corsBase = {
 };
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 const WM_TENANT_SLUG = "wm-vendas";
+let wmTenantIdCache = "";
 async function getWmTenantId() {
-  const { data, error } = await db
-    .from("wm_tenants")
-    .select("id")
-    .eq("slug", WM_TENANT_SLUG)
-    .eq("active", true)
-    .maybeSingle();
+  if (wmTenantIdCache) return wmTenantIdCache;
+  const { data, error } = await db.from("wm_tenants").select("id").eq("slug", WM_TENANT_SLUG).eq("active", true).maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("Tenant WM Vendas não encontrado.");
-  return data.id as string;
+  wmTenantIdCache = data.id as string;
+  return wmTenantIdCache;
 }
 async function sha(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
@@ -35,8 +33,8 @@ async function requireSession(req: Request) {
   const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
   if (!token) return null;
   const tokenHash = await sha(token);
-  const { data } = await db.from("wm_sessions").select("id").eq("token_hash", tokenHash).gt("expires_at", new Date().toISOString()).maybeSingle();
-  if (data) await db.from("wm_sessions").update({ last_seen_at: new Date().toISOString() }).eq("id", data.id);
+  const { data } = await db.from("wm_sessions").select("id,last_seen_at").eq("token_hash", tokenHash).gt("expires_at", new Date().toISOString()).maybeSingle();
+  if (data && (!data.last_seen_at || Date.now()-new Date(data.last_seen_at).getTime()>300000)) await db.from("wm_sessions").update({ last_seen_at: new Date().toISOString() }).eq("id", data.id);
   return data ? { id: data.id, tokenHash } : null;
 }
 
@@ -297,8 +295,14 @@ Deno.serve(async (req) => {
       const statsFor=(id:number)=>{if(!customerStats.has(id))customerStats.set(id,{totalPurchased:0,purchaseCount:0,pendingBalance:0,overdueCount:0,latePayments:0});return customerStats.get(id)!};
       for(const sale of sales){if(sale.customer_id){const stat=statsFor(sale.customer_id);stat.totalPurchased+=Number(sale.total);stat.purchaseCount+=1}}
       for(const item of ar.data||[]){if(!item.customer_id)continue;const stat=statsFor(item.customer_id);if(item.status==="pending"){stat.pendingBalance+=Number(item.amount);if(item.due_date<today)stat.overdueCount+=1}else if(item.status==="paid"&&item.paid_at&&item.paid_at.slice(0,10)>item.due_date){stat.latePayments+=1}}
+      const photoPaths=products.map((p:any)=>p.photo_path).filter(Boolean);
+      const signedByPath=new Map<string,string>();
+      if(photoPaths.length){
+        const {data:signedPhotos,error:signedError}=await db.storage.from("wm-product-images").createSignedUrls(photoPaths,3600);
+        if(!signedError) for(const item of signedPhotos||[]) if(item.path&&item.signedUrl)signedByPath.set(item.path,item.signedUrl);
+      }
       return reply({
-        products:await Promise.all(products.map(async(p:any)=>({id:p.id,barcode:p.barcode,name:p.name,brand:p.brand,costPrice:Number(p.cost_price),salePrice:Number(p.sale_price),stock:p.stock,photoUrl:p.photo_path?(await db.storage.from("wm-product-images").createSignedUrl(p.photo_path,3600)).data?.signedUrl||null:null}))),
+        products:products.map((p:any)=>({id:p.id,barcode:p.barcode,name:p.name,brand:p.brand,costPrice:Number(p.cost_price),salePrice:Number(p.sale_price),stock:p.stock,photoUrl:p.photo_path?signedByPath.get(p.photo_path)||null:null})),
         customers:(cr.data||[]).map((c:any)=>{const stat=statsFor(c.id);const loyaltyLevel=stat.totalPurchased>=3000?"Diamante":stat.totalPurchased>=1500?"Ouro":stat.totalPurchased>=500?"Prata":stat.totalPurchased>0?"Bronze":"Novo";const paymentStatus=stat.purchaseCount===0?"Novo":stat.overdueCount>0?"Em atraso":stat.latePayments>0?"Atenção":"Em dia";return {id:c.id,name:c.name,phone:c.phone,...stat,loyaltyLevel,paymentStatus}}),
         charges,
         supplierBills,
