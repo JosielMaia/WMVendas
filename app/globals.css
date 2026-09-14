@@ -76,3 +76,9 @@
 /* Navegação exclusiva da vendedora na loja */
 .store-header-actions{display:flex;align-items:center;gap:8px}.store-return{display:flex;align-items:center;gap:7px;border:1px solid #d9bd6f;background:#fff9e8;color:#765216;border-radius:12px;padding:10px 14px;text-decoration:none;font-weight:800}.store-return svg{width:18px}
 @media(max-width:640px){.store-header-actions{gap:5px}.store-return,.store-exit{padding:9px 10px;font-size:0}.store-return svg,.store-exit svg{width:21px}.store-return:after{content:"Gestão";font-size:11px}.store-exit:after{content:"Sair";font-size:11px}}
+
+
+/* Caixa e gestão financeira */
+.finance-stats{grid-template-columns:repeat(4,minmax(0,1fr))}.finance-form{margin-bottom:18px}.finance-list{margin-top:18px}.cash-entry{display:grid;grid-template-columns:40px minmax(0,1fr) auto;align-items:center;gap:12px;padding:14px 0}.cash-entry+.cash-entry{border-top:1px solid #f0e4e9}.cash-entry>span{width:36px;height:36px;display:grid;place-items:center;border-radius:12px;font-size:21px;font-weight:900}.cash-in{background:#e8f5ee;color:#26734f}.cash-out{background:#fff0f1;color:#ae3847}.cash-entry b,.cash-entry small{display:block}.cash-entry small{margin-top:4px;color:#866f78}.cash-entry>strong{white-space:nowrap}.positive{color:#26734f}.negative{color:#ae3847}
+@media(max-width:900px){.finance-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){.finance-stats{grid-template-columns:1fr 1fr}.finance-stats .stat{min-height:130px;padding:16px}.finance-stats .stat strong{font-size:22px}.cash-entry{grid-template-columns:36px minmax(0,1fr)}.cash-entry>strong{grid-column:2}.bottom-nav{grid-template-columns:repeat(8,minmax(64px,1fr));overflow-x:auto;justify-content:flex-start}.bottom-nav button{min-width:64px}}
