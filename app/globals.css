@@ -102,3 +102,8 @@
 /* Indicador de sincronização offline */
 .offline-badge{display:flex;align-items:center;gap:6px;border:1px solid #dfc67d;background:#fff7dc;color:#765216;border-radius:99px;padding:7px 10px;font-size:11px;font-weight:800;white-space:nowrap}.offline-badge>span{width:20px;height:20px;display:grid;place-items:center;border-radius:50%;background:#8b6530;color:#fff;font-size:10px}.sale-success:has(>small:first-of-type){min-width:0}
 @media(max-width:640px){.offline-badge{position:fixed;right:12px;bottom:82px;z-index:48;box-shadow:0 8px 24px #51301824}.top-actions .offline-badge+button{margin-left:0}}
+
+
+/* Consulta automática por código de barras */
+.barcode-lookup{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px}.barcode-lookup button{white-space:nowrap}.barcode-lookup button svg{width:17px}.lookup-found,.lookup-note{display:block;margin-top:7px;font-size:11px;line-height:1.4}.lookup-found{color:#26734f}.lookup-note{color:#8a6640}
+@media(max-width:560px){.barcode-lookup{grid-template-columns:1fr 1fr}.barcode-lookup>input{grid-column:1/-1}.barcode-lookup button{width:100%}}
