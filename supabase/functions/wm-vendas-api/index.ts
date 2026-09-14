@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
       if (expireError) throw expireError;
       const [{ data: settings, error: settingsError }, { data: products, error: productsError }] = await Promise.all([
         db.from("wm_store_settings").select("store_name,whatsapp,store_enabled").eq("tenant_id", tenantId).maybeSingle(),
-        db.from("wm_products").select("id,name,brand,sale_price,stock,photo_path,catalog_image_url").eq("tenant_id", tenantId).gt("sale_price", 0).order("name")
+        db.from("wm_products").select("id,name,brand,sale_price,stock,photo_path,catalog_image_url").eq("tenant_id", tenantId).gt("sale_price", 0).gt("stock", 0).order("name")
       ]);
       if (settingsError) throw settingsError;
       if (productsError) throw productsError;

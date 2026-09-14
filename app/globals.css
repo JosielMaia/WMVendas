@@ -107,3 +107,7 @@
 /* Consulta automática por código de barras */
 .barcode-lookup{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px}.barcode-lookup button{white-space:nowrap}.barcode-lookup button svg{width:17px}.lookup-found,.lookup-note{display:block;margin-top:7px;font-size:11px;line-height:1.4}.lookup-found{color:#26734f}.lookup-note{color:#8a6640}
 @media(max-width:560px){.barcode-lookup{grid-template-columns:1fr 1fr}.barcode-lookup>input{grid-column:1/-1}.barcode-lookup button{width:100%}}
+
+
+/* Estados do catálogo e pré-cadastro */
+.product-status{display:inline-flex;align-items:center;width:max-content;margin:7px 0 2px;padding:4px 9px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.02em}.product-status.active{background:#e6f5ec;color:#216843}.product-status.preregistered{background:#fff3d6;color:#855f18}.product-status.out-of-stock{background:#f7e5e8;color:#9a3043}.field-help{display:block;margin-top:6px;color:#876f79;font-size:11px;line-height:1.4}
