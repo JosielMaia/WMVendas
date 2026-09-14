@@ -167,6 +167,7 @@ Deno.serve(async (req) => {
     }
     const session = await requireSession(req);
     if (!session) return reply({ error: "Sessão expirada. Entre novamente." }, 401);
+    if (action === "session_check") return reply({ authenticated: true });
     if (action === "store_admin") {
       const tenantId = await getWmTenantId();
       const [{ data: settings, error: settingsError }, { data: orders, error: ordersError }] = await Promise.all([
