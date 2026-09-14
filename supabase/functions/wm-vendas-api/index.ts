@@ -362,6 +362,21 @@ Deno.serve(async (req) => {
       const {error}=await db.from("wm_customers").insert({name,phone:String(body.phone||"")});if(error)throw error;
       return reply({message:"Cliente cadastrada com sucesso"});
     }
+    if (action === "create_express_sale") {
+      const tenantId=await getWmTenantId();
+      if(!Array.isArray(body.items)||body.items.length<1||body.items.length>30)return reply({error:"Adicione produtos ao carrinho."},400);
+      const {data,error}=await db.rpc("wm_register_express_sale",{
+        p_tenant_id:tenantId,
+        p_customer_id:body.customerId?Number(body.customerId):null,
+        p_items:body.items,
+        p_payment_method:String(body.paymentMethod||"pix"),
+        p_installments:Number(body.installments||1),
+        p_due_date:String(body.dueDate||new Date(Date.now()+30*86400_000).toISOString().slice(0,10)),
+        p_discount:Number(body.discount||0)
+      });
+      if(error)return reply({error:error.message},400);
+      return reply({message:"Venda concluída com sucesso",receipt:data});
+    }
     if (action === "create_sale") {
       const {error}=await db.rpc("wm_register_sale",{p_product_id:Number(body.productId),p_customer_id:body.customerId?Number(body.customerId):null,p_quantity:Number(body.quantity||1),p_payment_method:String(body.paymentMethod||"pix"),p_installments:Number(body.installments||1),p_due_date:String(body.dueDate||new Date().toISOString().slice(0,10))});
       if(error)return reply({error:error.message},400);
