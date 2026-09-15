@@ -191,9 +191,9 @@ Deno.serve(async (req) => {
       const startDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedStart) ? requestedStart : new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString().slice(0,10);
       const [cash, sales, paidReceivables, pendingReceivables, paidBills] = await Promise.all([
         db.from("wm_cash_entries").select("id,kind,category,description,amount,payment_method,occurred_at").eq("tenant_id",tenantId).gte("occurred_at",startDate).limit(200),
-        db.from("wm_sales").select("id,total,cost_total,payment_method,sold_at,wm_products(name)").eq("tenant_id",tenantId).gte("sold_at",startDate),
-        db.from("wm_receivables").select("id,amount,paid_at,installment_number,wm_customers(name)").eq("tenant_id",tenantId).eq("status","paid").gte("paid_at",startDate),
-        db.from("wm_receivables").select("id,amount,due_date,installment_number,wm_customers(name)").eq("tenant_id",tenantId).eq("status","pending").order("due_date"),
+        db.from("wm_sales").select("id,receipt_code,customer_id,quantity,total,discount,cost_total,payment_method,installments,sold_at,wm_products(name,sale_price),wm_customers(name,phone)").eq("tenant_id",tenantId).gte("sold_at",startDate),
+        db.from("wm_receivables").select("id,sale_id,amount,due_date,paid_at,status,installment_number,wm_customers(name)").eq("tenant_id",tenantId).eq("status","paid").gte("paid_at",startDate),
+        db.from("wm_receivables").select("id,sale_id,amount,due_date,paid_at,status,installment_number,wm_customers(name)").eq("tenant_id",tenantId).eq("status","pending").order("due_date"),
         db.from("wm_supplier_bills").select("id,amount,paid_at,supplier_name").eq("tenant_id",tenantId).eq("status","paid").gte("paid_at",startDate)
       ]);
       for (const result of [cash,sales,paidReceivables,pendingReceivables,paidBills]) if (result.error) throw result.error;
@@ -203,7 +203,18 @@ Deno.serve(async (req) => {
       const manualIncome = manual.filter((item:any)=>item.kind==="income").reduce((sum:number,item:any)=>sum+Number(item.amount),0), manualExpense = manual.filter((item:any)=>item.kind==="expense").reduce((sum:number,item:any)=>sum+Number(item.amount),0), supplierExpense = billRows.reduce((sum:number,item:any)=>sum+Number(item.amount),0);
       const totalSales = saleRows.reduce((sum:number,sale:any)=>sum+Number(sale.total),0), costOfGoods = saleRows.reduce((sum:number,sale:any)=>sum+Number(sale.cost_total),0), income = instantSales + installmentReceipts + manualIncome, expenses = manualExpense + supplierExpense;
       const movements = [...manual.map((item:any)=>({id:`manual-${item.id}`,kind:item.kind,category:item.category,description:item.description,amount:Number(item.amount),paymentMethod:item.payment_method,occurredAt:item.occurred_at})),...instantRows.map((sale:any)=>({id:`sale-${sale.id}`,kind:"income",category:"Venda",description:sale.wm_products?.name||"Venda à vista",amount:Number(sale.total),paymentMethod:sale.payment_method,occurredAt:sale.sold_at})),...paidRows.map((item:any)=>({id:`received-${item.id}`,kind:"income",category:"Parcela recebida",description:`${item.wm_customers?.name||"Cliente"} - parcela ${item.installment_number}`,amount:Number(item.amount),paymentMethod:"recebimento",occurredAt:item.paid_at})),...pendingRows.map((item:any)=>({id:`pending-${item.id}`,kind:"pending",category:"A receber",description:`${item.wm_customers?.name||"Cliente"} - parcela ${item.installment_number}`,amount:Number(item.amount),paymentMethod:"parcelado",occurredAt:`${item.due_date}T12:00:00Z`})),...billRows.map((item:any)=>({id:`bill-${item.id}`,kind:"expense",category:"Fornecedor",description:item.supplier_name||"Boleto pago",amount:Number(item.amount),paymentMethod:"boleto",occurredAt:item.paid_at}))].sort((a:any,b:any)=>new Date(b.occurredAt).getTime()-new Date(a.occurredAt).getTime()).slice(0,200);
-      return reply({startDate,summary:{income,expenses,balance:income-expenses,sales:totalSales,outstanding,costOfGoods,estimatedProfit:totalSales-costOfGoods-manualExpense},entries:movements});
+      const receiptMap = new Map<string,any>();
+      for (const sale of saleRows as any[]) {
+        const code = String(sale.receipt_code || `sale-${sale.id}`);
+        if (!receiptMap.has(code)) receiptMap.set(code,{receiptCode:code,firstSaleId:Number(sale.id),customerName:sale.wm_customers?.name||"Cliente avulso",customerPhone:sale.wm_customers?.phone||"",subtotal:0,discount:0,total:0,paymentMethod:sale.payment_method||"",installments:Number(sale.installments||1),soldAt:sale.sold_at,items:[],installmentDates:[]});
+        const receipt=receiptMap.get(code),quantity=Number(sale.quantity||1),lineTotal=Number(sale.total||0),discount=Number(sale.discount||0),unitPrice=Number(sale.wm_products?.sale_price||0);
+        receipt.firstSaleId=Math.min(receipt.firstSaleId,Number(sale.id));receipt.subtotal+=unitPrice*quantity;receipt.discount+=discount;receipt.total+=lineTotal;
+        receipt.items.push({name:sale.wm_products?.name||"Produto",quantity,unitPrice,lineTotal});
+      }
+      const receivableRows=[...paidRows,...pendingRows];
+      for (const receipt of receiptMap.values()) receipt.installmentDates=receivableRows.filter((item:any)=>Number(item.sale_id)===receipt.firstSaleId).map((item:any)=>({number:Number(item.installment_number),dueDate:item.due_date,amount:Number(item.amount),status:item.status})).sort((a:any,b:any)=>a.number-b.number);
+      const receipts=Array.from(receiptMap.values()).map(({firstSaleId,...receipt})=>receipt).sort((a:any,b:any)=>new Date(b.soldAt).getTime()-new Date(a.soldAt).getTime());
+      return reply({startDate,summary:{income,expenses,balance:income-expenses,sales:totalSales,outstanding,costOfGoods,estimatedProfit:totalSales-costOfGoods-manualExpense},entries:movements,receipts});
     }
     if (action === "create_cash_entry") {
       const tenantId = sessionTenantId;
