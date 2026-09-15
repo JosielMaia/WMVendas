@@ -127,3 +127,7 @@
 
 /* Comprovante PDF */
 .receipt-customer{padding:11px 13px;border-radius:12px;background:#fff8fa;text-align:left}.receipt-customer b,.receipt-customer small{display:block}.receipt-customer small{margin-top:3px;color:#806976}.receipt-installments{padding:12px;border:1px solid #eadbe1;border-radius:12px;text-align:left}.receipt-installments>b{display:block;margin-bottom:7px;color:#6f3150}.receipt-installments>div{display:flex;justify-content:space-between;gap:10px;padding:5px 0;font-size:11px}.receipt-installments>div+div{border-top:1px solid #f1e5ea}.receipt-pdf{width:100%;background:#7b2448;color:#fff}.receipt-pdf svg{width:17px}@media(max-width:560px){.receipt-installments{max-height:170px;overflow:auto}}
+
+
+/* Caixa integrado a vendas e recebimentos */
+.cash-pending{background:#fff3d6!important;color:#8a641c!important}.pending-value{color:#9a6c18!important}.finance-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.finance-list .cash-entry{content-visibility:auto;contain-intrinsic-size:64px}@media(max-width:900px){.finance-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.finance-stats{grid-template-columns:1fr 1fr}.finance-stats .stat{min-width:0;padding:14px}.finance-stats .stat strong{font-size:20px}}
