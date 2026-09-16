@@ -7,7 +7,7 @@ import { ArrowLeft, Check, ChevronRight, Clock3, Copy, Info, Loader2, Minus, Plu
 
 type Product = { id:number; name:string; brand:string; price:number; stock:number; photoUrl?:string|null };
 type CartItem = Product & { quantity:number };
-type Catalog = { store:{ name:string; whatsapp:string; enabled:boolean }; products:Product[] };
+type Catalog = { store:{ name:string; whatsapp:string; enabled:boolean; logoUrl?:string|null; primaryColor?:string; accentColor?:string; slogan?:string }; products:Product[] };
 type OrderResult = { order:{ id:number; total:number; reference:string; status:string; paymentMethod:"pix"|"reservation"|"deposit"; depositPercent?:number|null; depositAmount?:number|null; balanceDue?:number|null }; pix:{ key:string; holder:string; payload:string }|null; whatsapp:string };
 
 const API_URL = "/api/store";
@@ -22,6 +22,7 @@ async function publicApi(action:string, payload:Record<string,unknown>={}) {
 }
 
 export default function StorePage() {
+  const storeSlug=typeof window==="undefined"?"wm-vendas":new URLSearchParams(window.location.search).get("loja")||"wm-vendas";
   const [catalog,setCatalog]=useState<Catalog|null>(null);
   const [cart,setCart]=useState<CartItem[]>([]);
   const [cartHydrated,setCartHydrated]=useState(false);
@@ -42,7 +43,7 @@ export default function StorePage() {
     async function loadCatalog(){
       for(let attempt=1;attempt<=3;attempt++){
         try{
-          const result=await publicApi("public_catalog");
+          const result=await publicApi("public_catalog",{storeSlug});
           if(active){setCatalog(result);setError("")}
           return;
         }catch(e){
@@ -53,17 +54,17 @@ export default function StorePage() {
     }
     void loadCatalog();
     return()=>{active=false};
-  },[]);
-  useEffect(()=>{try{const saved=localStorage.getItem("wm_store_cart");if(saved)setCart(JSON.parse(saved))}catch{}finally{setCartHydrated(true)}},[]);
+  },[storeSlug]);
+  useEffect(()=>{try{const saved=localStorage.getItem(`wm_store_cart_${storeSlug}`);if(saved)setCart(JSON.parse(saved))}catch{}finally{setCartHydrated(true)}},[storeSlug]);
   useEffect(()=>{
     const token=localStorage.getItem("wm_session");
     if(!token)return;
     fetch("/api/admin",{method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${token}`},body:JSON.stringify({action:"session_check"})})
       .then(response=>response.ok?response.json():Promise.reject())
-      .then(result=>setSellerMode(result.authenticated===true))
+      .then(result=>setSellerMode(result.authenticated===true&&result.account?.slug===storeSlug))
       .catch(()=>setSellerMode(false));
-  },[]);
-  useEffect(()=>{if(cartHydrated)localStorage.setItem("wm_store_cart",JSON.stringify(cart))},[cart,cartHydrated]);
+  },[storeSlug]);
+  useEffect(()=>{if(cartHydrated)localStorage.setItem(`wm_store_cart_${storeSlug}`,JSON.stringify(cart))},[cart,cartHydrated,storeSlug]);
 
   const brands=useMemo(()=>Array.from(new Set([...STORE_BRANDS,...(catalog?.products||[]).map(p=>p.brand)])),[catalog]);
   const products=useMemo(()=>catalog?.products.filter(p=>(brand==="Todas"||p.brand===brand)&&`${p.name} ${p.brand}`.toLowerCase().includes(search.toLowerCase()))||[],[catalog,brand,search]);
@@ -77,7 +78,7 @@ export default function StorePage() {
     event.preventDefault();setSaving(true);setError("");
     const form=new FormData(event.currentTarget);
     try{
-      const result=await publicApi("create_store_order",{customerName:form.get("customerName"),phone:form.get("phone"),deliveryType:form.get("deliveryType"),address:form.get("address"),paymentMethod,depositPercent:paymentMethod==="deposit"?depositPercent:null,items:cart.map(i=>({productId:i.id,quantity:i.quantity}))});
+      const result=await publicApi("create_store_order",{storeSlug,customerName:form.get("customerName"),phone:form.get("phone"),deliveryType:form.get("deliveryType"),address:form.get("address"),paymentMethod,depositPercent:paymentMethod==="deposit"?depositPercent:null,items:cart.map(i=>({productId:i.id,quantity:i.quantity}))});
       setOrder(result);setCart([]);setCheckout(false);
     }catch(e){setError(e instanceof Error?e.message:"Não foi possível criar o pedido.")}finally{setSaving(false)}
   }
@@ -90,8 +91,8 @@ export default function StorePage() {
   if(error&&!catalog)return <main className="store-loading"><Store/><h1>Não foi possível abrir a loja</h1><p>{error}</p><button onClick={()=>location.reload()}>Tentar novamente</button></main>;
   if(catalog&&!catalog.store.enabled)return <main className="store-loading"><Store/><h1>Voltamos em breve</h1><p>A loja está temporariamente fechada.</p></main>;
 
-  return <main className="store-page">
-    <header className="store-header"><div className="store-brand"><span>WM</span><div><strong>{catalog?.store.name||"WM Vendas"}</strong><small>Walquíria Maia</small></div></div><div className="store-header-actions">{sellerMode&&<Link href="/" className="store-return"><ArrowLeft/> Voltar à gestão</Link>}<button type="button" className="store-exit" onClick={exitStore}><LogOut/> Sair da loja</button></div></header>
+  return <main className="store-page" style={{"--store-primary":catalog?.store.primaryColor||"#7b2448","--store-accent":catalog?.store.accentColor||"#d6ad60"} as React.CSSProperties}>
+    <header className="store-header"><div className="store-brand"><span>{(catalog?.store.name||"WM").split(/\s+/).map(word=>word[0]).join("").slice(0,2).toUpperCase()}</span><div><strong>{catalog?.store.name||"WM Vendas"}</strong><small>{catalog?.store.slogan||"Loja virtual"}</small></div></div><div className="store-header-actions">{sellerMode&&<Link href="/" className="store-return"><ArrowLeft/> Voltar à gestão</Link>}<button type="button" className="store-exit" onClick={exitStore}><LogOut/> Sair da loja</button></div></header>
     <section className="store-intro"><div><small>BELEZA QUE ENCANTA</small><h1>Escolha seus favoritos</h1><p>Produtos selecionados, reserva simples e entrega combinada diretamente com a Walquíria.</p><button type="button" className="store-intro-cta" onClick={()=>document.querySelector(".store-tools")?.scrollIntoView({behavior:"smooth"})}>Ver produtos <ChevronRight/></button></div><span className="store-sparkle">WM</span></section><section className="store-trust"><div><ShieldCheck/><span><b>Compra segura</b><small>Pedido confirmado pela vendedora</small></span></div><div><Clock3/><span><b>Reserve primeiro</b><small>Opção sem pagamento imediato</small></span></div><div><Store/><span><b>Receba em casa</b><small>Entrega combinada pelo WhatsApp</small></span></div></section>
     <section className="store-tools"><label><Search/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar produtos…"/></label><div className="brand-pills">{brands.map(item=><button key={item} className={brand===item?"active":""} onClick={()=>setBrand(item)}>{item}</button>)}</div></section>
     <section className="store-grid">{products.map(product=>{const item=cart.find(i=>i.id===product.id);return <article className={product.stock>0?"store-product":"store-product sold-out"} key={product.id}><button className="store-photo" onClick={()=>setSelectedProduct(product)} aria-label={`Ver detalhes de ${product.name}`}>{product.photoUrl?<Image src={product.photoUrl} alt={product.name} fill sizes="(max-width: 640px) 50vw, 260px" unoptimized/>:<ShoppingBag/>}<span>{product.brand}</span><i><Info/> Ver detalhes</i></button><div className="store-product-body"><h2 onClick={()=>setSelectedProduct(product)}>{product.name}</h2><strong>{money(product.price)}</strong><small>{product.stock<1?"Produto esgotado":product.stock===1?"Última unidade disponível":`${product.stock} disponíveis para pedido`}</small><em className="store-reserve-note"><ShieldCheck/> PIX ou reserva com a vendedora</em>{item?<div className="quantity"><button onClick={()=>change(product,-1)} aria-label="Diminuir"><Minus/></button><b>{item.quantity}</b><button onClick={()=>change(product,1)} disabled={item.quantity>=product.stock} aria-label="Aumentar"><Plus/></button></div>:<button className="add-cart" disabled={product.stock<1} onClick={()=>change(product,1)}>{product.stock<1?<><ShoppingBag/> Esgotado</>:<><Plus/> Adicionar à cesta</>}</button>}</div></article>})}</section>

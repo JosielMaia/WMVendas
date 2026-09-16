@@ -11,6 +11,7 @@ const corsBase = {
   "Content-Type": "application/json",
 };
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+const authClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, { auth: { persistSession: false, autoRefreshToken: false } });
 const WM_TENANT_SLUG = "wm-vendas";
 let wmTenantIdCache = "";
 async function getWmTenantId() {
@@ -20,6 +21,12 @@ async function getWmTenantId() {
   if (!data) throw new Error("Tenant WM Vendas não encontrado.");
   wmTenantIdCache = data.id as string;
   return wmTenantIdCache;
+}
+async function getPublicTenantId(value:unknown){
+  const slug=tenantSlug(String(value||WM_TENANT_SLUG))||WM_TENANT_SLUG;
+  const {data,error}=await db.from("wm_tenants").select("id").eq("slug",slug).eq("active",true).maybeSingle();
+  if(error)throw error;if(!data)throw new Error("Loja não encontrada.");
+  return data.id as string;
 }
 async function sha(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
@@ -33,10 +40,11 @@ async function requireSession(req: Request) {
   const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
   if (!token) return null;
   const tokenHash = await sha(token);
-  const { data } = await db.from("wm_sessions").select("id,last_seen_at,tenant_id").eq("token_hash", tokenHash).gt("expires_at", new Date().toISOString()).maybeSingle();
+  const { data } = await db.from("wm_sessions").select("id,last_seen_at,tenant_id,user_id,member_id,role").eq("token_hash", tokenHash).gt("expires_at", new Date().toISOString()).maybeSingle();
   if (data && (!data.last_seen_at || Date.now()-new Date(data.last_seen_at).getTime()>300000)) await db.from("wm_sessions").update({ last_seen_at: new Date().toISOString() }).eq("id", data.id);
-  return data ? { id: data.id, tokenHash, tenantId: data.tenant_id as string } : null;
+  return data ? { id: data.id, tokenHash, tenantId: data.tenant_id as string, userId:data.user_id as string|null, memberId:data.member_id as string|null, role:data.role as string|null } : null;
 }
+function tenantSlug(value:string){return value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)}
 
 function pixField(id: string, value: string) {
   return id + String(value.length).padStart(2, "0") + value;
@@ -78,11 +86,11 @@ Deno.serve(async (req) => {
     const action = String(body.action || "");
 
     if (action === "public_catalog") {
-      const tenantId = await getWmTenantId();
+      const tenantId = await getPublicTenantId(body.storeSlug);
       const { error: expireError } = await db.rpc("wm_expire_store_reservations", { p_tenant_id: tenantId });
       if (expireError) throw expireError;
       const [{ data: settings, error: settingsError }, { data: products, error: productsError }] = await Promise.all([
-        db.from("wm_store_settings").select("store_name,whatsapp,store_enabled").eq("tenant_id", tenantId).maybeSingle(),
+        db.from("wm_store_settings").select("store_name,whatsapp,store_enabled,logo_url,primary_color,accent_color,slogan").eq("tenant_id", tenantId).maybeSingle(),
         db.from("wm_products").select("id,name,brand,sale_price,stock,photo_path,catalog_image_url").eq("tenant_id", tenantId).gt("sale_price", 0).gt("stock", 0).order("name")
       ]);
       if (settingsError) throw settingsError;
@@ -96,11 +104,11 @@ Deno.serve(async (req) => {
         stock: p.stock,
         photoUrl: p.photo_path ? (await db.storage.from("wm-product-images").createSignedUrl(p.photo_path, 3600)).data?.signedUrl || null : p.catalog_image_url || null
       })));
-      return reply({ store: { name: settings.store_name, whatsapp: settings.whatsapp, enabled: settings.store_enabled }, products: catalog });
+      return reply({ store: { name: settings.store_name, whatsapp: settings.whatsapp, enabled: settings.store_enabled,logoUrl:settings.logo_url,primaryColor:settings.primary_color,accentColor:settings.accent_color,slogan:settings.slogan }, products: catalog });
     }
 
     if (action === "create_store_order") {
-      const tenantId = await getWmTenantId();
+      const tenantId = await getPublicTenantId(body.storeSlug);
       const paymentMethod = String(body.paymentMethod || "pix");
       if (!["pix", "reservation", "deposit"].includes(paymentMethod)) return reply({ error: "Forma de pagamento inválida." }, 400);
       const depositPercent = paymentMethod === "deposit" ? Number(body.depositPercent) : null;
@@ -150,6 +158,38 @@ Deno.serve(async (req) => {
         whatsapp: settings.whatsapp
       }, 201);
     }
+    if (action === "signup_owner") {
+      const email=String(body.email||"").trim().toLowerCase(),password=String(body.password||""),ownerName=String(body.ownerName||"").trim(),storeName=String(body.storeName||"").trim(),phone=String(body.phone||"").trim();
+      let slug=tenantSlug(String(body.slug||storeName));
+      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||password.length<8||ownerName.length<2||storeName.length<2)return reply({error:"Informe nome, loja, e-mail válido e senha com pelo menos 8 caracteres."},400);
+      if(slug.length<3)return reply({error:"Escolha um nome de loja com pelo menos 3 caracteres."},400);
+      const {data:slugExists}=await db.from("wm_tenants").select("id").eq("slug",slug).maybeSingle();
+      if(slugExists)slug=`${slug}-${crypto.randomUUID().slice(0,5)}`;
+      const {data:created,error:createError}=await db.auth.admin.createUser({email,password,email_confirm:true,user_metadata:{name:ownerName}});
+      if(createError)return reply({error:createError.message.includes("already")?"Este e-mail já possui uma conta.":"Não foi possível criar a conta."},400);
+      const userId=created.user?.id;
+      if(!userId)return reply({error:"Não foi possível criar a conta."},500);
+      let tenantId="";
+      try{
+        const {data:tenant,error:tenantError}=await db.from("wm_tenants").insert({slug,name:storeName,owner_name:ownerName,owner_phone:phone,plan_code:"trial",subscription_status:"trialing",trial_ends_at:new Date(Date.now()+14*86400_000).toISOString(),limits:{users:3,products:500,customers:500,monthly_orders:1000}}).select("id").single();
+        if(tenantError)throw tenantError;tenantId=tenant.id;
+        const {data:member,error:memberError}=await db.from("wm_tenant_members").insert({tenant_id:tenantId,user_id:userId,email,role:"owner",active:true}).select("id").single();
+        if(memberError)throw memberError;
+        const {error:settingsError}=await db.from("wm_store_settings").insert({tenant_id:tenantId,store_name:storeName,pix_holder_name:ownerName,whatsapp:phone,store_enabled:true});
+        if(settingsError)throw settingsError;
+        const token=randomToken();await db.from("wm_sessions").insert({tenant_id:tenantId,user_id:userId,member_id:member.id,role:"owner",token_hash:await sha(token),expires_at:new Date(Date.now()+30*86400_000).toISOString()});
+        return reply({token,account:{tenantId,storeName,slug,ownerName,role:"owner",storeUrl:`/loja?loja=${slug}`}},201);
+      }catch(error){if(tenantId)await db.from("wm_tenants").delete().eq("id",tenantId);await db.auth.admin.deleteUser(userId);throw error}
+    }
+    if (action === "email_login") {
+      const email=String(body.email||"").trim().toLowerCase(),password=String(body.password||"");
+      const {data:auth,error:authError}=await authClient.auth.signInWithPassword({email,password});
+      if(authError||!auth.user)return reply({error:"E-mail ou senha incorretos."},401);
+      const {data:member,error:memberError}=await db.from("wm_tenant_members").select("id,tenant_id,role,wm_tenants!inner(name,slug,active)").eq("user_id",auth.user.id).eq("active",true).eq("wm_tenants.active",true).limit(1).maybeSingle();
+      if(memberError)throw memberError;if(!member)return reply({error:"Sua conta não está vinculada a uma loja ativa."},403);
+      const token=randomToken();await db.from("wm_sessions").insert({tenant_id:member.tenant_id,user_id:auth.user.id,member_id:member.id,role:member.role,token_hash:await sha(token),expires_at:new Date(Date.now()+30*86400_000).toISOString()});
+      return reply({token,account:{tenantId:member.tenant_id,storeName:member.wm_tenants?.name,slug:member.wm_tenants?.slug,role:member.role,storeUrl:`/loja?loja=${member.wm_tenants?.slug}`}});
+    }
     if (action === "login") {
       const pin = String(body.pin || "");
       if (!/^\d{6}$/.test(pin)) return reply({ error: "Digite os 6 números do PIN." }, 400);
@@ -168,11 +208,14 @@ Deno.serve(async (req) => {
     const session = await requireSession(req);
     if (!session) return reply({ error: "Sessão expirada. Entre novamente." }, 401);
     const sessionTenantId = session.tenantId;
-    if (action === "session_check") return reply({ authenticated: true });
+    if (action === "session_check") {
+      const {data:tenant}=await db.from("wm_tenants").select("name,slug,owner_name").eq("id",sessionTenantId).single();
+      return reply({authenticated:true,account:{tenantId:sessionTenantId,storeName:tenant?.name||"WM Vendas",slug:tenant?.slug||"wm-vendas",ownerName:tenant?.owner_name||"",role:session.role||"owner",storeUrl:`/loja?loja=${tenant?.slug||"wm-vendas"}`}});
+    }
     if (action === "barcode_lookup") {
       const barcode=String(body.barcode||"").trim();
       if(!/^[A-Za-z0-9._-]{4,40}$/.test(barcode))return reply({error:"Código de barras inválido."},400);
-      const tenantId=await getWmTenantId();
+      const tenantId=sessionTenantId;
       const {data:owned,error:ownedError}=await db.from("wm_products").select("name,brand,photo_path").eq("tenant_id",tenantId).eq("barcode",barcode).maybeSingle();
       if(ownedError)throw ownedError;
       if(owned){
@@ -225,23 +268,30 @@ Deno.serve(async (req) => {
       return reply({message:kind==="expense"?"Despesa registrada.":"Entrada registrada."},201);
     }
     if (action === "store_admin") {
-      const tenantId = await getWmTenantId();
+      const tenantId = sessionTenantId;
       const { error: expireError } = await db.rpc("wm_expire_store_reservations", { p_tenant_id: tenantId });
       if (expireError) throw expireError;
-      const [{ data: settings, error: settingsError }, { data: orders, error: ordersError }] = await Promise.all([
+      const [{ data: settings, error: settingsError }, { data: orders, error: ordersError },{data:tenant,error:tenantError}] = await Promise.all([
         db.from("wm_store_settings").select("*").eq("tenant_id", tenantId).maybeSingle(),
-        db.from("wm_store_orders").select("id,public_id,customer_name,phone,delivery_type,address,total,status,payment_method,reservation_expires_at,pix_payload,paid_at,created_at,wm_store_order_items(product_name,unit_price,quantity,line_total)").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(100)
+        db.from("wm_store_orders").select("id,public_id,customer_name,phone,delivery_type,address,total,status,payment_method,reservation_expires_at,pix_payload,paid_at,created_at,wm_store_order_items(product_name,unit_price,quantity,line_total)").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(100),
+        db.from("wm_tenants").select("slug").eq("id",tenantId).single()
       ]);
       if (settingsError) throw settingsError;
       if (ordersError) throw ordersError;
+      if (tenantError) throw tenantError;
       return reply({
         settings: {
+          slug:tenant.slug,
           storeName: settings.store_name,
           pixKey: settings.pix_key,
           pixHolderName: settings.pix_holder_name,
           pixCity: settings.pix_city,
           whatsapp: settings.whatsapp,
-          storeEnabled: settings.store_enabled
+          storeEnabled: settings.store_enabled,
+          logoUrl:settings.logo_url,
+          primaryColor:settings.primary_color,
+          accentColor:settings.accent_color,
+          slogan:settings.slogan
         },
         orders: (orders || []).map((o: any) => ({
           id: o.id,
@@ -267,6 +317,8 @@ Deno.serve(async (req) => {
       const pixHolderName = String(body.pixHolderName || "Walquiria Maia").trim();
       const pixCity = String(body.pixCity || "SAO PAULO").trim();
       const whatsapp = String(body.whatsapp || "").replace(/\D/g, "");
+      const primaryColor=/^#[0-9a-f]{6}$/i.test(String(body.primaryColor||""))?String(body.primaryColor):"#7b2448";
+      const accentColor=/^#[0-9a-f]{6}$/i.test(String(body.accentColor||""))?String(body.accentColor):"#d6ad60";
       if (!storeName || !pixHolderName || !pixCity) return reply({ error: "Preencha os dados da loja e do titular do PIX." }, 400);
       const { error } = await db.from("wm_store_settings").update({
         store_name: storeName,
@@ -274,6 +326,9 @@ Deno.serve(async (req) => {
         pix_holder_name: pixHolderName,
         pix_city: pixCity,
         whatsapp,
+        primary_color:primaryColor,
+        accent_color:accentColor,
+        slogan:String(body.slogan||"Estoque, vendas e cobranças na palma da mão").slice(0,120),
         store_enabled: body.storeEnabled !== false,
         updated_at: new Date().toISOString()
       }).eq("tenant_id", sessionTenantId).eq("id", true);
@@ -300,15 +355,16 @@ Deno.serve(async (req) => {
       return reply({ success: true });
     }
     if (action === "list") {
-      const [pr, cr, rr, sr, ar, br] = await Promise.all([
+      const [pr, cr, rr, sr, ar, br, tr] = await Promise.all([
         db.from("wm_products").select("*").eq("tenant_id",sessionTenantId).order("id", { ascending: false }),
         db.from("wm_customers").select("*").eq("tenant_id",sessionTenantId).order("name"),
         db.from("wm_receivables").select("id,amount,due_date,status,installment_number,wm_customers(name,phone)").eq("tenant_id",sessionTenantId).eq("status", "pending").order("due_date"),
         db.from("wm_sales").select("customer_id,total,cost_total").eq("tenant_id",sessionTenantId),
         db.from("wm_receivables").select("customer_id,amount,due_date,status,paid_at").eq("tenant_id",sessionTenantId),
-        db.from("wm_supplier_bills").select("id,supplier_name,description,amount,due_date,barcode_line,status").eq("tenant_id",sessionTenantId).order("due_date")
+        db.from("wm_supplier_bills").select("id,supplier_name,description,amount,due_date,barcode_line,status").eq("tenant_id",sessionTenantId).order("due_date"),
+        db.from("wm_tenants").select("name,slug,owner_name").eq("id",sessionTenantId).single()
       ]);
-      for (const result of [pr, cr, rr, sr, ar, br]) if (result.error) throw result.error;
+      for (const result of [pr, cr, rr, sr, ar, br, tr]) if (result.error) throw result.error;
       const products = pr.data || [], sales = sr.data || [], today = new Date().toISOString().slice(0, 10);
       const charges = (rr.data || []).map((r: any) => ({ id:r.id, amount:Number(r.amount), dueDate:r.due_date, status:r.due_date<today?"overdue":"upcoming", installmentNumber:r.installment_number, customerName:r.wm_customers?.name||"Cliente", phone:r.wm_customers?.phone||"" }));
       const investment = products.reduce((sum:number,p:any)=>sum+Number(p.cost_price)*p.stock,0);
@@ -328,6 +384,7 @@ Deno.serve(async (req) => {
         if(!signedError) for(const item of signedPhotos||[]) if(item.path&&item.signedUrl)signedByPath.set(item.path,item.signedUrl);
       }
       return reply({
+        account:{tenantId:sessionTenantId,storeName:tr.data?.name||"WM Vendas",slug:tr.data?.slug||"wm-vendas",ownerName:tr.data?.owner_name||"",role:session.role||"owner",storeUrl:`/loja?loja=${tr.data?.slug||"wm-vendas"}`},
         products:products.map((p:any)=>({id:p.id,barcode:p.barcode,name:p.name,brand:p.brand,costPrice:Number(p.cost_price),salePrice:Number(p.sale_price),stock:p.stock,photoUrl:p.photo_path?signedByPath.get(p.photo_path)||null:p.catalog_image_url||null})),
         customers:(cr.data||[]).map((c:any)=>{const stat=statsFor(c.id);const loyaltyLevel=stat.totalPurchased>=3000?"Diamante":stat.totalPurchased>=1500?"Ouro":stat.totalPurchased>=500?"Prata":stat.totalPurchased>0?"Bronze":"Novo";const paymentStatus=stat.purchaseCount===0?"Novo":stat.overdueCount>0?"Em atraso":stat.latePayments>0?"Atenção":"Em dia";return {id:c.id,name:c.name,phone:c.phone,...stat,loyaltyLevel,paymentStatus}}),
         charges,
@@ -395,7 +452,7 @@ Deno.serve(async (req) => {
       return reply({message:"Cliente cadastrada com sucesso"});
     }
     if (action === "create_express_sale") {
-      const tenantId=await getWmTenantId();
+      const tenantId=sessionTenantId;
       if(!Array.isArray(body.items)||body.items.length<1||body.items.length>30)return reply({error:"Adicione produtos ao carrinho."},400);
       const {data,error}=await db.rpc("wm_register_express_sale",{
         p_tenant_id:tenantId,
