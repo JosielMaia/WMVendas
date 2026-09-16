@@ -46,6 +46,13 @@ async function requireSession(req: Request) {
 }
 function tenantSlug(value:string){return value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)}
 
+const sellerActions=new Set(["session_check","list","barcode_lookup","logout","create_customer","create_sale","create_express_sale","create_product","update_product","mark_paid","update_store_order_status"]);
+const viewerActions=new Set(["session_check","list","barcode_lookup","logout"]);
+function canRun(role:string,action:string){return role==="owner"||role==="admin"||(role==="seller"&&sellerActions.has(action))||(role==="viewer"&&viewerActions.has(action))}
+async function audit(session:{tenantId:string;userId:string|null;memberId:string|null;role:string|null},eventType:string,entityType:string,entityId:string|null,metadata:Record<string,unknown>={}){
+  await db.from("wm_audit_events").insert({tenant_id:session.tenantId,actor_type:session.userId?"user":"legacy_pin",actor_id:session.userId||session.memberId||null,event_type:eventType,entity_type:entityType,entity_id:entityId,metadata:{role:session.role||"owner",...metadata}});
+}
+
 function pixField(id: string, value: string) {
   return id + String(value.length).padStart(2, "0") + value;
 }
@@ -219,9 +226,50 @@ Deno.serve(async (req) => {
     const session = await requireSession(req);
     if (!session) return reply({ error: "Sessão expirada. Entre novamente." }, 401);
     const sessionTenantId = session.tenantId;
+    const sessionRole=session.role||"owner";
+    if(!canRun(sessionRole,action))return reply({error:"Seu perfil não tem permissão para realizar esta ação."},403);
     if (action === "session_check") {
       const {data:tenant}=await db.from("wm_tenants").select("name,slug,owner_name").eq("id",sessionTenantId).single();
       return reply({authenticated:true,account:{tenantId:sessionTenantId,storeName:tenant?.name||"WM Vendas",slug:tenant?.slug||"wm-vendas",ownerName:tenant?.owner_name||"",role:session.role||"owner",storeUrl:`/loja?loja=${tenant?.slug||"wm-vendas"}`}});
+    }
+    if(action==="team_list"){
+      const {data:tenant,error:tenantError}=await db.from("wm_tenants").select("limits").eq("id",sessionTenantId).single();
+      const {data:members,error}=await db.from("wm_tenant_members").select("id,user_id,name,email,role,active,created_at,updated_at").eq("tenant_id",sessionTenantId).order("created_at");
+      if(error)throw error;if(tenantError)throw tenantError;
+      return reply({members:(members||[]).map((m:any)=>({id:m.id,name:m.name||m.email||"Usuário",email:m.email||"",role:m.role,active:m.active,createdAt:m.created_at,updatedAt:m.updated_at,current:m.id===session.memberId})),limit:Number(tenant.limits?.users||5)});
+    }
+    if(action==="create_team_member"){
+      const name=String(body.name||"").trim(),email=String(body.email||"").trim().toLowerCase(),password=String(body.password||""),role=String(body.role||"seller");
+      if(name.length<2||!/^\S+@\S+\.\S+$/.test(email)||password.length<8||!["admin","seller","viewer"].includes(role))return reply({error:"Informe nome, e-mail, senha com 8 caracteres e perfil válido."},400);
+      if(sessionRole!=="owner"&&role==="admin")return reply({error:"Somente o proprietário pode criar administradores."},403);
+      const [{count},{data:tenant,error:tenantError}]=await Promise.all([db.from("wm_tenant_members").select("*",{count:"exact",head:true}).eq("tenant_id",sessionTenantId).eq("active",true),db.from("wm_tenants").select("limits").eq("id",sessionTenantId).single()]);
+      if(tenantError)throw tenantError;const limit=Number(tenant.limits?.users||5);if((count||0)>=limit)return reply({error:`Limite de ${limit} usuários ativos atingido.`},409);
+      const existing=await db.from("wm_tenant_members").select("id").eq("tenant_id",sessionTenantId).eq("email",email).maybeSingle();
+      if(existing.data)return reply({error:"Este e-mail já pertence à equipe."},409);
+      const {data:created,error:authError}=await db.auth.admin.createUser({email,password,email_confirm:true,user_metadata:{name}});
+      if(authError||!created.user)return reply({error:authError?.message||"Não foi possível criar o acesso."},400);
+      const {data:member,error}=await db.from("wm_tenant_members").insert({tenant_id:sessionTenantId,user_id:created.user.id,name,email,role,active:true,created_by:session.memberId}).select("id").single();
+      if(error){await db.auth.admin.deleteUser(created.user.id);throw error}
+      await audit(session,"team.member_created","tenant_member",member.id,{name,email,role});
+      return reply({message:"Usuário criado. Ele já pode entrar com e-mail e senha."},201);
+    }
+    if(action==="update_team_member"){
+      const id=String(body.id||""),role=String(body.role||"seller"),active=body.active!==false;
+      if(!id||!["admin","seller","viewer"].includes(role))return reply({error:"Usuário ou perfil inválido."},400);
+      if(id===session.memberId&&!active)return reply({error:"Você não pode bloquear o próprio acesso."},400);
+      const {data:target,error:findError}=await db.from("wm_tenant_members").select("id,user_id,role,email").eq("tenant_id",sessionTenantId).eq("id",id).maybeSingle();
+      if(findError)throw findError;if(!target)return reply({error:"Usuário não encontrado."},404);
+      if(target.role==="owner")return reply({error:"O proprietário não pode ser alterado."},403);
+      if(sessionRole!=="owner"&&(target.role==="admin"||role==="admin"))return reply({error:"Somente o proprietário pode alterar administradores."},403);
+      const {error}=await db.from("wm_tenant_members").update({role,active,updated_at:new Date().toISOString()}).eq("tenant_id",sessionTenantId).eq("id",id);if(error)throw error;
+      await db.from("wm_sessions").update({role}).eq("tenant_id",sessionTenantId).eq("member_id",id);
+      if(!active)await db.from("wm_sessions").delete().eq("tenant_id",sessionTenantId).eq("member_id",id);
+      await audit(session,"team.member_updated","tenant_member",id,{email:target.email,role,active});
+      return reply({message:active?"Permissões atualizadas.":"Usuário bloqueado e sessões encerradas."});
+    }
+    if(action==="change_password"){
+      const password=String(body.password||"");if(!session.userId)return reply({error:"Contas com PIN não possuem senha individual."},400);if(password.length<8)return reply({error:"A nova senha precisa ter pelo menos 8 caracteres."},400);
+      const {error}=await db.auth.admin.updateUserById(session.userId,{password});if(error)throw error;await audit(session,"account.password_changed","user",session.userId);return reply({message:"Senha alterada com segurança."});
     }
     if (action === "barcode_lookup") {
       const barcode=String(body.barcode||"").trim();

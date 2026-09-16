@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StoreAdmin } from "./store-admin";
+import { TeamView } from "./team";
 
 type Product = { id:number; barcode:string; name:string; brand:string; costPrice:number; salePrice:number; stock:number; photoUrl?:string|null };
 type Customer = { id:number; name:string; phone:string; totalPurchased:number; purchaseCount:number; pendingBalance:number; overdueCount:number; latePayments:number; loyaltyLevel:"Novo"|"Bronze"|"Prata"|"Ouro"|"Diamante"; paymentStatus:"Novo"|"Em dia"|"Atenção"|"Em atraso" };
@@ -79,7 +80,8 @@ export default function HomePage() {
   const alertCount=useMemo(()=>data.charges.filter(c=>c.status==="overdue"||Math.ceil((new Date(`${c.dueDate}T12:00:00`).getTime()-Date.now())/86400000)<=3).length+data.supplierBills.filter(b=>b.status!=="paid"&&b.daysUntilDue<=3).length+data.products.filter(p=>p.salePrice<=0||p.stock<=1).length,[data]);
   function openSale(scan=false){setSaleProductId("");setModal(scan?"saleScanner":"sale")}
   function sellScanned(code:string){const product=data.products.find(p=>p.barcode.trim()===code.trim());if(!product){setEditingProduct(null);sessionStorage.setItem("wm-scanned-code",code);setModal("product");notify("Produto não cadastrado. Complete o pré-cadastro.");return}if(product.salePrice<=0){setEditingProduct(product);setModal("product");notify(`${product.name} está pré-cadastrado. Informe os preços e o estoque.`);return}if(product.stock<1){setEditingProduct(product);setModal("product");notify(`${product.name} está sem estoque. Faça a entrada da mercadoria.`);return}setSaleProductId(String(product.id));setModal("sale");notify(`${product.name} encontrado: ${money(product.salePrice)}`)}
-  const items:[string,any,string][]=[["inicio",Home,"Início"],["produtos",ShoppingBag,"Produtos"],["vendas",CircleDollarSign,"Vendas"],["clientes",Users,"Clientes"],["cobrancas",Bell,"Cobranças"],["fornecedores",ReceiptText,"Boletos"],["financeiro",Wallet,"Caixa"],["loja",Store,"Loja"]];
+  const role=data.account?.role||"owner",canManage=role==="owner"||role==="admin";
+  const items:[string,any,string][]=[["inicio",Home,"Início"],["produtos",ShoppingBag,"Produtos"],["vendas",CircleDollarSign,"Vendas"],["clientes",Users,"Clientes"],["cobrancas",Bell,"Cobranças"],...(canManage?[["fornecedores",ReceiptText,"Boletos"],["financeiro",Wallet,"Caixa"],["loja",Store,"Loja"],["equipe",UserPlus,"Equipe"]] as [string,any,string][]):[]];
   if(!authenticated)return <LoginScreen login={login} loading={saving}/>;
   return <main className="min-h-screen pb-24 lg:pb-8">
     <header className="topbar"><div className="brand"><span className="brand-mark">{(data.account?.storeName||"WM").split(/\s+/).map(x=>x[0]).join("").slice(0,2).toUpperCase()}</span><div><strong>{data.account?.storeName||"WM Vendas"}</strong><small>{data.account?.ownerName||"Walquíria Maia"}</small></div></div><div className="top-actions">{offlineCount>0&&<span className="offline-badge"><span>{offlineCount}</span> pendente(s)</span>}<InstallButton compact/><button className="icon-btn" aria-label="Sair" onClick={logout}><LogOut/></button><button className="icon-btn" aria-label="Central de alertas" onClick={()=>setView("alertas")}><Bell/><i>{alertCount}</i></button></div></header>
@@ -95,6 +97,7 @@ export default function HomePage() {
         {view==="fornecedores"&&<SupplierBillsView bills={data.supplierBills} dashboard={data.dashboard} open={()=>setModal("supplierBill")} pay={(id)=>submit("mark_supplier_bill_paid",{id})}/>} 
         {view==="financeiro"&&<FinanceView api={api} notify={notify}/>} 
         {view==="loja"&&<StoreAdmin api={api} notify={notify}/>} 
+        {view==="equipe"&&canManage&&<TeamView api={api} notify={notify} currentRole={role}/>} 
       </>}</section>
     </div>
     <nav className="bottom-nav">{items.map(([id,Icon,label])=><button key={id} className={view===id?"active":""} onClick={()=>id==="vendas"?openSale(true):setView(id)}><Icon/><span>{id==="cobrancas"?"Cobrar":label}</span></button>)}</nav>
