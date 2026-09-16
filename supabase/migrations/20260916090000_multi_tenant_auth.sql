@@ -16,3 +16,12 @@ alter table public.wm_store_settings add column if not exists logo_url text;
 alter table public.wm_store_settings add column if not exists primary_color text not null default '#7b2448';
 alter table public.wm_store_settings add column if not exists accent_color text not null default '#d6ad60';
 alter table public.wm_store_settings add column if not exists slogan text not null default 'Estoque, vendas e cobranças na palma da mão';
+
+create table if not exists public.wm_signup_attempts(
+  id bigint generated always as identity primary key,
+  client_key text not null,
+  succeeded boolean not null default false,
+  attempted_at timestamptz not null default now()
+);
+alter table public.wm_signup_attempts enable row level security;
+create index if not exists wm_signup_attempts_client_time_idx on public.wm_signup_attempts(client_key,attempted_at desc);

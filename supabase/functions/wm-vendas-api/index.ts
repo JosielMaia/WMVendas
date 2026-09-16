@@ -160,11 +160,16 @@ Deno.serve(async (req) => {
     }
     if (action === "signup_owner") {
       const email=String(body.email||"").trim().toLowerCase(),password=String(body.password||""),ownerName=String(body.ownerName||"").trim(),storeName=String(body.storeName||"").trim(),phone=String(body.phone||"").trim();
+      const signupKey=await sha((req.headers.get("cf-connecting-ip")||req.headers.get("x-forwarded-for")||"unknown")+"|"+(req.headers.get("user-agent")||""));
+      const signupSince=new Date(Date.now()-60*60_000).toISOString();
+      const {count:signupCount}=await db.from("wm_signup_attempts").select("*",{count:"exact",head:true}).eq("client_key",signupKey).gte("attempted_at",signupSince);
+      if((signupCount||0)>=3)return reply({error:"Muitas tentativas de cadastro. Aguarde uma hora."},429);
       let slug=tenantSlug(String(body.slug||storeName));
       if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||password.length<8||ownerName.length<2||storeName.length<2)return reply({error:"Informe nome, loja, e-mail válido e senha com pelo menos 8 caracteres."},400);
       if(slug.length<3)return reply({error:"Escolha um nome de loja com pelo menos 3 caracteres."},400);
       const {data:slugExists}=await db.from("wm_tenants").select("id").eq("slug",slug).maybeSingle();
       if(slugExists)slug=`${slug}-${crypto.randomUUID().slice(0,5)}`;
+      const {data:signupAttempt}=await db.from("wm_signup_attempts").insert({client_key:signupKey}).select("id").single();
       const {data:created,error:createError}=await db.auth.admin.createUser({email,password,email_confirm:true,user_metadata:{name:ownerName}});
       if(createError)return reply({error:createError.message.includes("already")?"Este e-mail já possui uma conta.":"Não foi possível criar a conta."},400);
       const userId=created.user?.id;
@@ -178,12 +183,18 @@ Deno.serve(async (req) => {
         const {error:settingsError}=await db.from("wm_store_settings").insert({tenant_id:tenantId,store_name:storeName,pix_holder_name:ownerName,whatsapp:phone,store_enabled:true});
         if(settingsError)throw settingsError;
         const token=randomToken();await db.from("wm_sessions").insert({tenant_id:tenantId,user_id:userId,member_id:member.id,role:"owner",token_hash:await sha(token),expires_at:new Date(Date.now()+30*86400_000).toISOString()});
+        if(signupAttempt)await db.from("wm_signup_attempts").update({succeeded:true}).eq("id",signupAttempt.id);
         return reply({token,account:{tenantId,storeName,slug,ownerName,role:"owner",storeUrl:`/loja?loja=${slug}`}},201);
       }catch(error){if(tenantId)await db.from("wm_tenants").delete().eq("id",tenantId);await db.auth.admin.deleteUser(userId);throw error}
     }
     if (action === "email_login") {
       const email=String(body.email||"").trim().toLowerCase(),password=String(body.password||"");
+      const loginKey=await sha((req.headers.get("cf-connecting-ip")||req.headers.get("x-forwarded-for")||"unknown")+"|email|"+(req.headers.get("user-agent")||""));
+      const loginSince=new Date(Date.now()-15*60_000).toISOString();
+      const {count:loginCount}=await db.from("wm_login_attempts").select("*",{count:"exact",head:true}).eq("client_key",loginKey).eq("succeeded",false).gte("attempted_at",loginSince);
+      if((loginCount||0)>=5)return reply({error:"Muitas tentativas. Aguarde 15 minutos."},429);
       const {data:auth,error:authError}=await authClient.auth.signInWithPassword({email,password});
+      await db.from("wm_login_attempts").insert({client_key:loginKey,succeeded:!authError&&!!auth.user});
       if(authError||!auth.user)return reply({error:"E-mail ou senha incorretos."},401);
       const {data:member,error:memberError}=await db.from("wm_tenant_members").select("id,tenant_id,role,wm_tenants!inner(name,slug,active)").eq("user_id",auth.user.id).eq("active",true).eq("wm_tenants.active",true).limit(1).maybeSingle();
       if(memberError)throw memberError;if(!member)return reply({error:"Sua conta não está vinculada a uma loja ativa."},403);
