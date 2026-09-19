@@ -79,7 +79,22 @@ export default function HomePage() {
   const visibleProducts=useMemo(()=>data.products.filter(p=>`${p.name} ${p.brand} ${p.barcode}`.toLowerCase().includes(search.toLowerCase())),[data.products,search]);
   const alertCount=useMemo(()=>data.charges.filter(c=>c.status==="overdue"||Math.ceil((new Date(`${c.dueDate}T12:00:00`).getTime()-Date.now())/86400000)<=3).length+data.supplierBills.filter(b=>b.status!=="paid"&&b.daysUntilDue<=3).length+data.products.filter(p=>p.salePrice<=0||p.stock<=1).length,[data]);
   function openSale(scan=false){setSaleProductId("");setModal(scan?"saleScanner":"sale")}
-  function sellScanned(code:string){const product=data.products.find(p=>p.barcode.trim()===code.trim());if(!product){setEditingProduct(null);sessionStorage.setItem("wm-scanned-code",code);setModal("product");notify("Produto não cadastrado. Complete o pré-cadastro.");return}if(product.salePrice<=0){setEditingProduct(product);setModal("product");notify(`${product.name} está pré-cadastrado. Informe os preços e o estoque.`);return}if(product.stock<1){setEditingProduct(product);setModal("product");notify(`${product.name} está sem estoque. Faça a entrada da mercadoria.`);return}setSaleProductId(String(product.id));setModal("sale");notify(`${product.name} encontrado: ${money(product.salePrice)}`)}
+  async function sellScanned(code:string){
+    const clean=code.trim();
+    try{
+      const result=await api("barcode_lookup",{barcode:clean});
+      if(!result.found||!result.registered){setEditingProduct(null);sessionStorage.setItem("wm-scanned-code",clean);setModal("product");notify("Produto não cadastrado. Complete o pré-cadastro.");return}
+      const found=result.product;
+      const product:Product={
+        id:Number(found.id),barcode:clean,name:String(found.name||"Produto"),brand:String(found.brand||"Outros"),
+        costPrice:Number(found.costPrice||0),salePrice:Number(found.salePrice||0),stock:Number(found.stock||0),photoUrl:found.imageUrl||null
+      };
+      setData(current=>({...current,products:current.products.some(item=>item.id===product.id)?current.products.map(item=>item.id===product.id?{...item,...product}:item):[...current.products,product]}));
+      if(product.salePrice<=0){setEditingProduct(product);setModal("product");notify(`${product.name} está pré-cadastrado. Informe os preços e o estoque.`);return}
+      if(product.stock<1){setEditingProduct(product);setModal("product");notify(`${product.name} está sem estoque. Faça a entrada da mercadoria.`);return}
+      setSaleProductId(String(product.id));setModal("sale");notify(`${product.name} adicionado por ${money(product.salePrice)}`)
+    }catch(e){setModal(null);notify(e instanceof Error?e.message:"Não foi possível consultar este produto.")}
+  }
   const role=data.account?.role||"owner",canManage=role==="owner"||role==="admin";
   const items:[string,any,string][]=[["inicio",Home,"Início"],["produtos",ShoppingBag,"Produtos"],["vendas",CircleDollarSign,"Vendas"],["clientes",Users,"Clientes"],["cobrancas",Bell,"Cobranças"],...(canManage?([["fornecedores",ReceiptText,"Boletos"],["financeiro",Wallet,"Caixa"],["loja",Store,"Loja"],["equipe",UserPlus,"Equipe"]] as [string,any,string][]):[])];
   if(!authenticated)return <LoginScreen login={login} loading={saving}/>;
