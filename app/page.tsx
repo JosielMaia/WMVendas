@@ -19,7 +19,7 @@ type CashEntry = { id:number|string; kind:"income"|"expense"|"pending"; category
 type SaleReceipt = { receiptCode:string; customerName:string; customerPhone:string; subtotal:number; discount:number; total:number; paymentMethod:string; installments:number; soldAt:string; items:{name:string;quantity:number;unitPrice:number;lineTotal:number}[]; installmentDates:{number:number;dueDate:string;amount:number;status:string}[] };
 type FinanceReport = { startDate:string; summary:{ income:number; expenses:number; balance:number; sales:number; outstanding:number; costOfGoods:number; estimatedProfit:number }; entries:CashEntry[]; receipts:SaleReceipt[] };
 type Dashboard = { investment:number; expectedRevenue:number; expectedProfit:number; salesTotal:number; received:number; pending:number; overdueCount:number; supplierPendingTotal:number; supplierDueSoonCount:number; supplierOverdueCount:number };
-type Account = { tenantId:string; storeName:string; slug:string; ownerName:string; role:string; storeUrl:string };
+type Account = { tenantId:string; storeName:string; slug:string; ownerName:string; role:string; hasIndividualLogin:boolean; storeUrl:string };
 type Data = { products:Product[]; customers:Customer[]; charges:Charge[]; supplierBills:SupplierBill[]; dashboard:Dashboard; account?:Account };
 const money = (v:number) => new Intl.NumberFormat("pt-BR", { style:"currency", currency:"BRL" }).format(v || 0);
 const dateBR = (v:string) => new Intl.DateTimeFormat("pt-BR", { day:"2-digit", month:"short" }).format(new Date(`${v}T12:00:00`));
@@ -97,7 +97,7 @@ export default function HomePage() {
         {view==="fornecedores"&&<SupplierBillsView bills={data.supplierBills} dashboard={data.dashboard} open={()=>setModal("supplierBill")} pay={(id)=>submit("mark_supplier_bill_paid",{id})}/>} 
         {view==="financeiro"&&<FinanceView api={api} notify={notify}/>} 
         {view==="loja"&&<StoreAdmin api={api} notify={notify}/>} 
-        {view==="equipe"&&canManage&&<TeamView api={api} notify={notify} currentRole={role}/>} 
+        {view==="equipe"&&canManage&&<TeamView api={api} notify={notify} currentRole={role} hasIndividualLogin={!!data.account?.hasIndividualLogin}/>} 
       </>}</section>
     </div>
     <nav className="bottom-nav">{items.map(([id,Icon,label])=><button key={id} className={view===id?"active":""} onClick={()=>id==="vendas"?openSale(true):setView(id)}><Icon/><span>{id==="cobrancas"?"Cobrar":label}</span></button>)}</nav>

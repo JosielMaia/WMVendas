@@ -230,13 +230,18 @@ Deno.serve(async (req) => {
     if(!canRun(sessionRole,action))return reply({error:"Seu perfil não tem permissão para realizar esta ação."},403);
     if (action === "session_check") {
       const {data:tenant}=await db.from("wm_tenants").select("name,slug,owner_name").eq("id",sessionTenantId).single();
-      return reply({authenticated:true,account:{tenantId:sessionTenantId,storeName:tenant?.name||"WM Vendas",slug:tenant?.slug||"wm-vendas",ownerName:tenant?.owner_name||"",role:session.role||"owner",storeUrl:`/loja?loja=${tenant?.slug||"wm-vendas"}`}});
+      return reply({authenticated:true,account:{tenantId:sessionTenantId,storeName:tenant?.name||"WM Vendas",slug:tenant?.slug||"wm-vendas",ownerName:tenant?.owner_name||"",role:session.role||"owner",hasIndividualLogin:!!session.userId,storeUrl:`/loja?loja=${tenant?.slug||"wm-vendas"}`}});
     }
     if(action==="team_list"){
-      const {data:tenant,error:tenantError}=await db.from("wm_tenants").select("limits").eq("id",sessionTenantId).single();
-      const {data:members,error}=await db.from("wm_tenant_members").select("id,user_id,name,email,role,active,created_at,updated_at").eq("tenant_id",sessionTenantId).order("created_at");
-      if(error)throw error;if(tenantError)throw tenantError;
-      return reply({members:(members||[]).map((m:any)=>({id:m.id,name:m.name||m.email||"Usuário",email:m.email||"",role:m.role,active:m.active,createdAt:m.created_at,updatedAt:m.updated_at,current:m.id===session.memberId})),limit:Number(tenant.limits?.users||5)});
+      const [{data:tenant,error:tenantError},{data:members,error},{data:sessions,error:sessionsError},{data:events,error:eventsError}]=await Promise.all([
+        db.from("wm_tenants").select("limits").eq("id",sessionTenantId).single(),
+        db.from("wm_tenant_members").select("id,user_id,name,email,role,active,created_at,updated_at").eq("tenant_id",sessionTenantId).order("created_at"),
+        db.from("wm_sessions").select("member_id,last_seen_at,created_at").eq("tenant_id",sessionTenantId).not("member_id","is",null).order("last_seen_at",{ascending:false}).limit(100),
+        db.from("wm_audit_events").select("id,event_type,entity_type,entity_id,metadata,created_at").eq("tenant_id",sessionTenantId).order("created_at",{ascending:false}).limit(20)
+      ]);
+      if(error)throw error;if(tenantError)throw tenantError;if(sessionsError)throw sessionsError;if(eventsError)throw eventsError;
+      const lastSeen=new Map<string,string>();for(const item of sessions||[]){if(item.member_id&&!lastSeen.has(item.member_id))lastSeen.set(item.member_id,item.last_seen_at||item.created_at)}
+      return reply({members:(members||[]).map((m:any)=>({id:m.id,name:m.name||m.email||"Usuário",email:m.email||"",role:m.role,active:m.active,createdAt:m.created_at,updatedAt:m.updated_at,lastSeenAt:lastSeen.get(m.id)||null,current:m.id===session.memberId})),events:(events||[]).map((e:any)=>({id:e.id,type:e.event_type,entityType:e.entity_type,entityId:e.entity_id,createdAt:e.created_at,actorEmail:e.metadata?.email||null})),limit:Number(tenant.limits?.users||5),hasIndividualLogin:!!session.userId});
     }
     if(action==="create_team_member"){
       const name=String(body.name||"").trim(),email=String(body.email||"").trim().toLowerCase(),password=String(body.password||""),role=String(body.role||"seller");
@@ -443,7 +448,7 @@ Deno.serve(async (req) => {
         if(!signedError) for(const item of signedPhotos||[]) if(item.path&&item.signedUrl)signedByPath.set(item.path,item.signedUrl);
       }
       return reply({
-        account:{tenantId:sessionTenantId,storeName:tr.data?.name||"WM Vendas",slug:tr.data?.slug||"wm-vendas",ownerName:tr.data?.owner_name||"",role:session.role||"owner",storeUrl:`/loja?loja=${tr.data?.slug||"wm-vendas"}`},
+        account:{tenantId:sessionTenantId,storeName:tr.data?.name||"WM Vendas",slug:tr.data?.slug||"wm-vendas",ownerName:tr.data?.owner_name||"",role:session.role||"owner",hasIndividualLogin:!!session.userId,storeUrl:`/loja?loja=${tr.data?.slug||"wm-vendas"}`},
         products:products.map((p:any)=>({id:p.id,barcode:p.barcode,name:p.name,brand:p.brand,costPrice:Number(p.cost_price),salePrice:Number(p.sale_price),stock:p.stock,photoUrl:p.photo_path?signedByPath.get(p.photo_path)||null:p.catalog_image_url||null})),
         customers:(cr.data||[]).map((c:any)=>{const stat=statsFor(c.id);const loyaltyLevel=stat.totalPurchased>=3000?"Diamante":stat.totalPurchased>=1500?"Ouro":stat.totalPurchased>=500?"Prata":stat.totalPurchased>0?"Bronze":"Novo";const paymentStatus=stat.purchaseCount===0?"Novo":stat.overdueCount>0?"Em atraso":stat.latePayments>0?"Atenção":"Em dia";return {id:c.id,name:c.name,phone:c.phone,...stat,loyaltyLevel,paymentStatus}}),
         charges,
