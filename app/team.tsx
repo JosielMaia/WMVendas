@@ -10,7 +10,7 @@ type Member={id:string;name:string;email:string;role:"owner"|"admin"|"seller"|"v
 type AuditEvent={id:number;type:string;entityType:string;entityId:string|null;createdAt:string;actorEmail:string|null};
 type TeamData={members:Member[];events:AuditEvent[];limit:number;hasIndividualLogin:boolean};
 const roles={owner:"Proprietário",admin:"Administrador",seller:"Vendedor",viewer:"Somente leitura"};
-const eventLabels:Record<string,string>={"team.member_created":"Usuário adicionado à equipe","team.member_updated":"Permissões de usuário atualizadas","account.password_changed":"Senha da conta alterada"};
+const eventLabels:Record<string,string>={"team.member_created":"Usuário adicionado à equipe","team.member_updated":"Permissões de usuário atualizadas","account.password_changed":"Senha da conta alterada","store.brand_updated":"Marca e configurações da loja atualizadas"};
 const dateTime=(value:string|null)=>value?new Intl.DateTimeFormat("pt-BR",{dateStyle:"short",timeStyle:"short"}).format(new Date(value)):"Nunca acessou";
 
 export function TeamView({api,notify,currentRole,hasIndividualLogin}:{api:(action:string,payload?:Record<string,unknown>)=>Promise<any>;notify:(message:string)=>void;currentRole:string;hasIndividualLogin:boolean}){

@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
       const { error: expireError } = await db.rpc("wm_expire_store_reservations", { p_tenant_id: tenantId });
       if (expireError) throw expireError;
       const [{ data: settings, error: settingsError }, { data: products, error: productsError }] = await Promise.all([
-        db.from("wm_store_settings").select("store_name,whatsapp,store_enabled,logo_url,primary_color,accent_color,slogan").eq("tenant_id", tenantId).maybeSingle(),
+        db.from("wm_store_settings").select("store_name,whatsapp,store_enabled,logo_url,logo_path,primary_color,accent_color,slogan").eq("tenant_id", tenantId).maybeSingle(),
         db.from("wm_products").select("id,name,brand,sale_price,stock,photo_path,catalog_image_url").eq("tenant_id", tenantId).gt("sale_price", 0).gt("stock", 0).order("name")
       ]);
       if (settingsError) throw settingsError;
@@ -111,7 +111,8 @@ Deno.serve(async (req) => {
         stock: p.stock,
         photoUrl: p.photo_path ? (await db.storage.from("wm-product-images").createSignedUrl(p.photo_path, 3600)).data?.signedUrl || null : p.catalog_image_url || null
       })));
-      return reply({ store: { name: settings.store_name, whatsapp: settings.whatsapp, enabled: settings.store_enabled,logoUrl:settings.logo_url,primaryColor:settings.primary_color,accentColor:settings.accent_color,slogan:settings.slogan }, products: catalog });
+      const logoUrl=settings.logo_path?(await db.storage.from("wm-store-assets").createSignedUrl(settings.logo_path,3600)).data?.signedUrl||null:settings.logo_url||null;
+      return reply({ store: { name: settings.store_name, whatsapp: settings.whatsapp, enabled: settings.store_enabled,logoUrl,primaryColor:settings.primary_color,accentColor:settings.accent_color,slogan:settings.slogan }, products: catalog });
     }
 
     if (action === "create_store_order") {
@@ -159,6 +160,7 @@ Deno.serve(async (req) => {
         }).eq("id", order.id).eq("tenant_id", tenantId);
         if (updateError) throw updateError;
       }
+      const logoUrl=settings.logo_path?(await db.storage.from("wm-store-assets").createSignedUrl(settings.logo_path,3600)).data?.signedUrl||null:settings.logo_url||null;
       return reply({
         order: { id: order.id, publicId: order.publicId, total, reference, status: order.status, paymentMethod, depositPercent, depositAmount, balanceDue },
         pix: pixPayload ? { key: settings.pix_key, holder: settings.pix_holder_name, payload: pixPayload } : null,
@@ -352,7 +354,7 @@ Deno.serve(async (req) => {
           pixCity: settings.pix_city,
           whatsapp: settings.whatsapp,
           storeEnabled: settings.store_enabled,
-          logoUrl:settings.logo_url,
+          logoUrl,
           primaryColor:settings.primary_color,
           accentColor:settings.accent_color,
           slogan:settings.slogan
@@ -384,19 +386,36 @@ Deno.serve(async (req) => {
       const primaryColor=/^#[0-9a-f]{6}$/i.test(String(body.primaryColor||""))?String(body.primaryColor):"#7b2448";
       const accentColor=/^#[0-9a-f]{6}$/i.test(String(body.accentColor||""))?String(body.accentColor):"#d6ad60";
       if (!storeName || !pixHolderName || !pixCity) return reply({ error: "Preencha os dados da loja e do titular do PIX." }, 400);
+      const {data:current,error:currentError}=await db.from("wm_store_settings").select("logo_path").eq("tenant_id",sessionTenantId).eq("id",true).maybeSingle();
+      if(currentError)throw currentError;
+      let logoPath=current?.logo_path as string|null,newLogoPath:string|null=null;
+      const logo=String(body.logo||"");
+      if(logo){
+        const match=logo.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+        if(!match)return reply({error:"Formato de logomarca inválido. Use JPG, PNG ou WebP."},400);
+        const bytes=Uint8Array.from(atob(match[2]),c=>c.charCodeAt(0));
+        if(bytes.byteLength>1024*1024)return reply({error:"A logomarca deve ter no máximo 1 MB."},400);
+        const ext=match[1]==="image/png"?"png":match[1]==="image/webp"?"webp":"jpg";
+        newLogoPath=`${sessionTenantId}/logo-${crypto.randomUUID()}.${ext}`;
+        const {error:uploadError}=await db.storage.from("wm-store-assets").upload(newLogoPath,bytes,{contentType:match[1],cacheControl:"3600",upsert:false});
+        if(uploadError)throw uploadError;logoPath=newLogoPath;
+      }else if(body.removeLogo===true){logoPath=null}
       const { error } = await db.from("wm_store_settings").update({
         store_name: storeName,
         pix_key: pixKey,
         pix_holder_name: pixHolderName,
         pix_city: pixCity,
         whatsapp,
+        logo_path:logoPath,
         primary_color:primaryColor,
         accent_color:accentColor,
         slogan:String(body.slogan||"Estoque, vendas e cobranças na palma da mão").slice(0,120),
         store_enabled: body.storeEnabled !== false,
         updated_at: new Date().toISOString()
       }).eq("tenant_id", sessionTenantId).eq("id", true);
-      if (error) throw error;
+      if (error){if(newLogoPath)await db.storage.from("wm-store-assets").remove([newLogoPath]);throw error}
+      if(current?.logo_path&&current.logo_path!==logoPath)await db.storage.from("wm-store-assets").remove([current.logo_path]);
+      await audit(session,"store.brand_updated","store_settings",sessionTenantId,{logoChanged:!!logo||body.removeLogo===true});
       return reply({ message: "Configurações da loja atualizadas." });
     }
     if (action === "update_store_order_status") {
