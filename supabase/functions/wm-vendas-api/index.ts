@@ -160,7 +160,6 @@ Deno.serve(async (req) => {
         }).eq("id", order.id).eq("tenant_id", tenantId);
         if (updateError) throw updateError;
       }
-      const logoUrl=settings.logo_path?(await db.storage.from("wm-store-assets").createSignedUrl(settings.logo_path,3600)).data?.signedUrl||null:settings.logo_url||null;
       return reply({
         order: { id: order.id, publicId: order.publicId, total, reference, status: order.status, paymentMethod, depositPercent, depositAmount, balanceDue },
         pix: pixPayload ? { key: settings.pix_key, holder: settings.pix_holder_name, payload: pixPayload } : null,
@@ -345,6 +344,7 @@ Deno.serve(async (req) => {
       if (settingsError) throw settingsError;
       if (ordersError) throw ordersError;
       if (tenantError) throw tenantError;
+      const logoUrl=settings.logo_path?(await db.storage.from("wm-store-assets").createSignedUrl(settings.logo_path,3600)).data?.signedUrl||null:settings.logo_url||null;
       return reply({
         settings: {
           slug:tenant.slug,
