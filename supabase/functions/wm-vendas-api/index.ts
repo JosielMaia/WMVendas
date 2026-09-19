@@ -281,12 +281,12 @@ Deno.serve(async (req) => {
       const barcode=String(body.barcode||"").trim();
       if(!/^[A-Za-z0-9._-]{4,40}$/.test(barcode))return reply({error:"Código de barras inválido."},400);
       const tenantId=sessionTenantId;
-      const {data:owned,error:ownedError}=await db.from("wm_products").select("name,brand,photo_path").eq("tenant_id",tenantId).eq("barcode",barcode).maybeSingle();
+      const {data:owned,error:ownedError}=await db.from("wm_products").select("id,name,brand,cost_price,sale_price,stock,photo_path,catalog_image_url").eq("tenant_id",tenantId).eq("barcode",barcode).maybeSingle();
       if(ownedError)throw ownedError;
       if(owned){
         let imageUrl=null;
         if(owned.photo_path)imageUrl=(await db.storage.from("wm-product-images").createSignedUrl(owned.photo_path,3600)).data?.signedUrl||null;
-        return reply({found:true,product:{barcode,name:owned.name,brand:owned.brand,category:"Outros",imageUrl,source:"WM Vendas"}});
+        return reply({found:true,registered:true,product:{id:owned.id,barcode,name:owned.name,brand:owned.brand,costPrice:Number(owned.cost_price),salePrice:Number(owned.sale_price),stock:Number(owned.stock),category:"Outros",imageUrl:imageUrl||owned.catalog_image_url||null,source:"Estoque da loja"}});
       }
       const {data:catalog,error:catalogError}=await db.from("wm_product_catalog").select("barcode,name,brand,category,image_url,source").eq("barcode",barcode).maybeSingle();
       if(catalogError)throw catalogError;
