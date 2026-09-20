@@ -7,11 +7,24 @@ import { ArrowLeft, Check, ChevronRight, Clock3, Copy, Info, Loader2, Minus, Plu
 
 type Product = { id:number; name:string; brand:string; price:number; stock:number; photoUrl?:string|null };
 type CartItem = Product & { quantity:number };
-type Catalog = { store:{ name:string; whatsapp:string; enabled:boolean; logoUrl?:string|null; primaryColor?:string; accentColor?:string; slogan?:string }; products:Product[] };
+type Catalog = { store:{ name:string; whatsapp:string; enabled:boolean; logoUrl?:string|null; primaryColor?:string; accentColor?:string; slogan?:string; activity?:"commerce"|"food"|"services"; segment?:string }; products:Product[] };
 type OrderResult = { order:{ id:number; total:number; reference:string; status:string; paymentMethod:"pix"|"reservation"|"deposit"; depositPercent?:number|null; depositAmount?:number|null; balanceDue?:number|null }; pix:{ key:string; holder:string; payload:string }|null; whatsapp:string };
 
 const API_URL = "/api/store";
-const STORE_BRANDS = ["Todas","Rommanel","Natura","O Boticário","Eudora","Avon","Amaggod","Jequiti","Vestuário","Calçados","Acessórios","Cosméticos","Perfumaria","Outros"];
+const categoryPresets:Record<string,string[]>={
+  beauty_jewelry:["Todas","Rommanel","Natura","O Boticário","Eudora","Avon","Amaggod","Jequiti","Vestuário","Calçados","Acessórios","Cosméticos","Perfumaria","Outros"],
+  fashion:["Todas","Vestuário","Feminino","Masculino","Infantil","Calçados","Acessórios","Outros"],
+  footwear:["Todas","Feminino","Masculino","Infantil","Esportivo","Casual","Acessórios","Outros"],
+  general_retail:["Todas","Novidades","Vestuário","Calçados","Acessórios","Cosméticos","Perfumaria","Casa","Presentes","Outros"],
+  confectionery:["Todas","Bolos","Bolos no pote","Doces","Salgados","Kits","Sobremesas","Bebidas","Personalizados","Outros"],
+  sweets_savories:["Todas","Doces","Salgados","Kits","Festas","Bebidas","Outros"],
+  bakery:["Todas","Pães","Bolos","Doces","Salgados","Bebidas","Outros"],
+  meals:["Todas","Marmitas","Refeições","Combos","Sobremesas","Bebidas","Outros"],
+  beauty_services:["Todas","Serviços","Pacotes","Cabelo","Unhas","Estética","Outros"],
+  maintenance:["Todas","Serviços","Pacotes","Visitas","Outros"],
+  professional_services:["Todas","Serviços","Consultorias","Pacotes","Outros"],
+};
+const introPresets={commerce:{eyebrow:"ESCOLHAS QUE ENCANTAM",title:"Escolha seus favoritos",description:"Produtos selecionados, reserva simples e entrega combinada diretamente com a loja."},food:{eyebrow:"FEITO COM CARINHO",title:"Escolha suas delícias",description:"Produtos preparados com cuidado, pedido simples e entrega combinada diretamente com a loja."},services:{eyebrow:"SERVIÇOS PARA VOCÊ",title:"Escolha o que precisa",description:"Conheça as opções, solicite pelo celular e combine os detalhes diretamente com a loja."}};
 const money = (value:number) => new Intl.NumberFormat("pt-BR", { style:"currency", currency:"BRL" }).format(value);
 
 async function publicApi(action:string, payload:Record<string,unknown>={}) {
@@ -66,7 +79,9 @@ export default function StorePage() {
   },[storeSlug]);
   useEffect(()=>{if(cartHydrated)localStorage.setItem(`wm_store_cart_${storeSlug}`,JSON.stringify(cart))},[cart,cartHydrated,storeSlug]);
 
-  const brands=useMemo(()=>Array.from(new Set([...STORE_BRANDS,...(catalog?.products||[]).map(p=>p.brand)])),[catalog]);
+  const activity=catalog?.store.activity||"commerce",segment=catalog?.store.segment||"general_retail";
+  const intro=introPresets[activity];
+  const brands=useMemo(()=>Array.from(new Set([...(categoryPresets[segment]||categoryPresets.general_retail),...(catalog?.products||[]).map(p=>p.brand)])),[catalog,segment]);
   const products=useMemo(()=>catalog?.products.filter(p=>(brand==="Todas"||p.brand===brand)&&`${p.name} ${p.brand}`.toLowerCase().includes(search.toLowerCase()))||[],[catalog,brand,search]);
   const count=cart.reduce((sum,item)=>sum+item.quantity,0);
   const total=cart.reduce((sum,item)=>sum+item.price*item.quantity,0);
@@ -93,8 +108,8 @@ export default function StorePage() {
 
   return <main className="store-page" style={{"--store-primary":catalog?.store.primaryColor||"#7b2448","--store-accent":catalog?.store.accentColor||"#d6ad60"} as React.CSSProperties}>
     <header className="store-header"><div className="store-brand"><span className={catalog?.store.logoUrl?"has-store-logo":""}>{catalog?.store.logoUrl?<Image src={catalog.store.logoUrl} alt={`Logomarca ${catalog.store.name}`} fill sizes="56px" unoptimized/>:(catalog?.store.name||"WM").split(/\s+/).map(word=>word[0]).join("").slice(0,2).toUpperCase()}</span><div><strong>{catalog?.store.name||"WM Vendas"}</strong><small>{catalog?.store.slogan||"Loja virtual"}</small></div></div><div className="store-header-actions">{sellerMode&&<Link href="/" className="store-return"><ArrowLeft/> Voltar à gestão</Link>}<button type="button" className="store-exit" onClick={exitStore}><LogOut/> Sair da loja</button></div></header>
-    <section className="store-intro"><div><small>BELEZA QUE ENCANTA</small><h1>Escolha seus favoritos</h1><p>Produtos selecionados, reserva simples e entrega combinada diretamente com a Walquíria.</p><button type="button" className="store-intro-cta" onClick={()=>document.querySelector(".store-tools")?.scrollIntoView({behavior:"smooth"})}>Ver produtos <ChevronRight/></button></div><span className="store-sparkle">WM</span></section><section className="store-trust"><div><ShieldCheck/><span><b>Compra segura</b><small>Pedido confirmado pela vendedora</small></span></div><div><Clock3/><span><b>Reserve primeiro</b><small>Opção sem pagamento imediato</small></span></div><div><Store/><span><b>Receba em casa</b><small>Entrega combinada pelo WhatsApp</small></span></div></section>
-    <section className="store-tools"><label><Search/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar produtos…"/></label><div className="category-scroll-hint"><span>Categorias</span><small>Deslize para ver todas →</small></div><div className="brand-pills" role="navigation" aria-label="Categorias de produtos">{brands.map(item=><button type="button" key={item} className={brand===item?"active":""} onClick={()=>setBrand(item)}>{item}</button>)}</div></section>
+    <section className="store-intro"><div><small>{intro.eyebrow}</small><h1>{intro.title}</h1><p>{intro.description}</p><button type="button" className="store-intro-cta" onClick={()=>document.querySelector(".store-tools")?.scrollIntoView({behavior:"smooth"})}>Ver opções <ChevronRight/></button></div><span className="store-sparkle">WM</span></section><section className="store-trust"><div><ShieldCheck/><span><b>Pedido seguro</b><small>Confirmado diretamente pela loja</small></span></div><div><Clock3/><span><b>Reserve primeiro</b><small>Opção sem pagamento imediato</small></span></div><div><Store/><span><b>Receba em casa</b><small>Entrega combinada pelo WhatsApp</small></span></div></section>
+    <section className="store-tools"><label><Search/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={activity==="services"?"Buscar serviços…":"Buscar produtos…"}/></label><div className="category-scroll-hint"><span>Categorias</span><small>Deslize para ver todas →</small></div><div className="brand-pills" role="navigation" aria-label="Categorias da loja">{brands.map(item=><button type="button" key={item} className={brand===item?"active":""} onClick={()=>setBrand(item)}>{item}</button>)}</div></section>
     <section className="store-grid">{products.map(product=>{const item=cart.find(i=>i.id===product.id);return <article className={product.stock>0?"store-product":"store-product sold-out"} key={product.id}><button className="store-photo" onClick={()=>setSelectedProduct(product)} aria-label={`Ver detalhes de ${product.name}`}>{product.photoUrl?<Image src={product.photoUrl} alt={product.name} fill sizes="(max-width: 640px) 50vw, 260px" unoptimized/>:<ShoppingBag/>}<span>{product.brand}</span><i><Info/> Ver detalhes</i></button><div className="store-product-body"><h2 onClick={()=>setSelectedProduct(product)}>{product.name}</h2><strong>{money(product.price)}</strong><small>{product.stock<1?"Produto esgotado":product.stock===1?"Última unidade disponível":`${product.stock} disponíveis para pedido`}</small><em className="store-reserve-note"><ShieldCheck/> PIX ou reserva com a vendedora</em>{item?<div className="quantity"><button onClick={()=>change(product,-1)} aria-label="Diminuir"><Minus/></button><b>{item.quantity}</b><button onClick={()=>change(product,1)} disabled={item.quantity>=product.stock} aria-label="Aumentar"><Plus/></button></div>:<button className="add-cart" disabled={product.stock<1} onClick={()=>change(product,1)}>{product.stock<1?<><ShoppingBag/> Esgotado</>:<><Plus/> Adicionar à cesta</>}</button>}</div></article>})}</section>
     {!products.length&&<section className="store-empty"><ShoppingBag/><h2>Nenhum produto encontrado</h2><p>Tente outra busca ou categoria.</p></section>}
     <section className="own-store-cta"><span><Store/></span><div><small>VENDA MAIS, ORGANIZE MELHOR</small><h2>Tenha sua própria loja online</h2><p>Catálogo, estoque, vendas, clientes, cobranças e PIX em um só lugar.</p></div><a href="https://wa.me/5591984855557?text=Ol%C3%A1%21%20Conheci%20o%20WM%20Vendas%20pela%20Loja%20da%20Walqu%C3%ADria%20e%20quero%20ter%20minha%20pr%C3%B3pria%20loja%20online." target="_blank" rel="noreferrer">Entre em contato <ChevronRight/></a></section>

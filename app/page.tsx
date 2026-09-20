@@ -2318,7 +2318,7 @@ function ProductDialog({
             />
           </div>
           <div className="field full">
-            <Label>Marca</Label>
+            <Label>Marca ou categoria</Label>
             <Select name="brand" value={brand} onValueChange={setBrand}>
               <SelectTrigger>
                 <SelectValue />
@@ -2336,6 +2336,16 @@ function ProductDialog({
                 <SelectItem value="Acessórios">Acessórios</SelectItem>
                 <SelectItem value="Cosméticos">Cosméticos</SelectItem>
                 <SelectItem value="Perfumaria">Perfumaria</SelectItem>
+                <SelectItem value="Bolos">Bolos</SelectItem>
+                <SelectItem value="Bolos no pote">Bolos no pote</SelectItem>
+                <SelectItem value="Doces">Doces</SelectItem>
+                <SelectItem value="Salgados">Salgados</SelectItem>
+                <SelectItem value="Kits">Kits</SelectItem>
+                <SelectItem value="Sobremesas">Sobremesas</SelectItem>
+                <SelectItem value="Bebidas">Bebidas</SelectItem>
+                <SelectItem value="Personalizados">Personalizados</SelectItem>
+                <SelectItem value="Serviços">Serviços</SelectItem>
+                <SelectItem value="Pacotes">Pacotes</SelectItem>
                 <SelectItem value="Outros">Outros</SelectItem>
               </SelectContent>
             </Select>
