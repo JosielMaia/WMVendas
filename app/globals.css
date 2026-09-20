@@ -167,3 +167,8 @@
 /* Categorias roláveis da loja */
 .category-scroll-hint{display:flex;align-items:center;justify-content:space-between;margin-top:14px;color:#694253}.category-scroll-hint span{font-size:12px;font-weight:900}.category-scroll-hint small{font-size:10px;color:#9b6479}.brand-pills{width:100%;max-width:100%;overflow-x:auto!important;overflow-y:hidden;scrollbar-width:thin;scrollbar-color:#a75b78 #f5e8ed;overscroll-behavior-x:contain;scroll-snap-type:x proximity;touch-action:pan-x;-webkit-overflow-scrolling:touch;padding:10px 2px 9px!important}.brand-pills button{flex:0 0 auto;scroll-snap-align:start}.brand-pills::-webkit-scrollbar{height:6px}.brand-pills::-webkit-scrollbar-track{background:#f5e8ed;border-radius:99px}.brand-pills::-webkit-scrollbar-thumb{background:#a75b78;border-radius:99px;border:1px solid #f5e8ed}
 @media(max-width:640px){.store-tools{min-width:0;overflow:hidden}.brand-pills{margin-right:-14px;padding-right:28px!important}.brand-pills button{min-height:42px;padding:9px 14px}.category-scroll-hint{margin-top:12px}}
+
+/* Resumo completo do estoque */
+.stock-strip{grid-template-columns:repeat(4,minmax(0,1fr))}.stock-strip .stock-profit{background:#f2e8c9;border-radius:13px}.stock-strip .stock-profit svg,.stock-strip .stock-profit b{color:#745219}.stock-strip .stock-profit b{font-size:17px}
+@media(max-width:1100px) and (min-width:901px){.stock-strip{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.stock-strip>div:nth-child(3){border-left:0}.stock-strip>div:nth-child(n+3){border-top:1px solid #e3cbd4;padding-top:14px}}
+@media(max-width:900px){.stock-strip{grid-template-columns:1fr}.stock-strip .stock-profit{padding:12px!important}}

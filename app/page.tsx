@@ -1173,6 +1173,13 @@ function DashboardView({
             <b>{money(d.expectedRevenue)}</b>
           </span>
         </div>
+        <div className="stock-profit">
+          <CircleDollarSign />
+          <span>
+            <small>Lucro geral previsto</small>
+            <b>{money(d.expectedProfit)}</b>
+          </span>
+        </div>
       </section>
     </>
   );
