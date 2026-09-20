@@ -1,226 +1,3105 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Barcode, Bell, Box, Building2, CalendarClock, Camera, Check, ChevronRight, CircleDollarSign, Download, Home, ImagePlus, Loader2, LockKeyhole, LogOut, PackagePlus, Pencil, Plus, ReceiptText, Search, Send, Share, ShoppingBag, Smartphone, Sparkles, Store, TrendingUp, UserPlus, Users, Wallet, X } from "lucide-react";
+import {
+  AlertCircle,
+  Barcode,
+  Bell,
+  Box,
+  Building2,
+  CalendarClock,
+  Camera,
+  Check,
+  ChevronRight,
+  CircleDollarSign,
+  Download,
+  Home,
+  ImagePlus,
+  Loader2,
+  LockKeyhole,
+  LogOut,
+  PackagePlus,
+  Pencil,
+  Plus,
+  ReceiptText,
+  Search,
+  Send,
+  Share,
+  ShoppingBag,
+  Smartphone,
+  Sparkles,
+  Store,
+  TrendingUp,
+  UserPlus,
+  Users,
+  Wallet,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StoreAdmin } from "./store-admin";
 import { TeamView } from "./team";
 import { PlatformAdmin } from "./platform-admin";
 
-type Product = { id:number; barcode:string; name:string; brand:string; costPrice:number; salePrice:number; stock:number; photoUrl?:string|null };
-type Customer = { id:number; name:string; phone:string; totalPurchased:number; purchaseCount:number; pendingBalance:number; overdueCount:number; latePayments:number; loyaltyLevel:"Novo"|"Bronze"|"Prata"|"Ouro"|"Diamante"; paymentStatus:"Novo"|"Em dia"|"Atenção"|"Em atraso" };
-type Charge = { id:number; customerName:string; phone:string; amount:number; dueDate:string; status:string; installmentNumber:number };
-type SupplierBill = { id:number; supplierName:string; description:string; amount:number; dueDate:string; barcodeLine:string; status:"overdue"|"today"|"dueSoon"|"upcoming"|"paid"; daysUntilDue:number };
-type CashEntry = { id:number|string; kind:"income"|"expense"|"pending"; category:string; description:string; amount:number; paymentMethod:string; occurredAt:string };
-type SaleReceipt = { receiptCode:string; customerName:string; customerPhone:string; subtotal:number; discount:number; total:number; paymentMethod:string; installments:number; soldAt:string; items:{name:string;quantity:number;unitPrice:number;lineTotal:number}[]; installmentDates:{number:number;dueDate:string;amount:number;status:string}[] };
-type FinanceReport = { startDate:string; summary:{ income:number; expenses:number; balance:number; sales:number; outstanding:number; costOfGoods:number; estimatedProfit:number }; entries:CashEntry[]; receipts:SaleReceipt[] };
-type Dashboard = { investment:number; expectedRevenue:number; expectedProfit:number; salesTotal:number; received:number; pending:number; overdueCount:number; supplierPendingTotal:number; supplierDueSoonCount:number; supplierOverdueCount:number };
-type Account = { tenantId:string; storeName:string; slug:string; ownerName:string; role:string; hasIndividualLogin:boolean; isPlatformAdmin?:boolean; storeUrl:string };
-type Data = { products:Product[]; customers:Customer[]; charges:Charge[]; supplierBills:SupplierBill[]; dashboard:Dashboard; account?:Account };
-const money = (v:number) => new Intl.NumberFormat("pt-BR", { style:"currency", currency:"BRL" }).format(v || 0);
-const dateBR = (v:string) => new Intl.DateTimeFormat("pt-BR", { day:"2-digit", month:"short" }).format(new Date(`${v}T12:00:00`));
-const empty:Data = { products:[], customers:[], charges:[], supplierBills:[], dashboard:{ investment:0, expectedRevenue:0, expectedProfit:0, salesTotal:0, received:0, pending:0, overdueCount:0, supplierPendingTotal:0, supplierDueSoonCount:0, supplierOverdueCount:0 } };
+type Product = {
+  id: number;
+  barcode: string;
+  name: string;
+  brand: string;
+  costPrice: number;
+  salePrice: number;
+  stock: number;
+  photoUrl?: string | null;
+};
+type Customer = {
+  id: number;
+  name: string;
+  phone: string;
+  totalPurchased: number;
+  purchaseCount: number;
+  pendingBalance: number;
+  overdueCount: number;
+  latePayments: number;
+  loyaltyLevel: "Novo" | "Bronze" | "Prata" | "Ouro" | "Diamante";
+  paymentStatus: "Novo" | "Em dia" | "Atenção" | "Em atraso";
+};
+type Charge = {
+  id: number;
+  customerName: string;
+  phone: string;
+  amount: number;
+  dueDate: string;
+  status: string;
+  installmentNumber: number;
+};
+type SupplierBill = {
+  id: number;
+  supplierName: string;
+  description: string;
+  amount: number;
+  dueDate: string;
+  barcodeLine: string;
+  status: "overdue" | "today" | "dueSoon" | "upcoming" | "paid";
+  daysUntilDue: number;
+};
+type CashEntry = {
+  id: number | string;
+  kind: "income" | "expense" | "pending";
+  category: string;
+  description: string;
+  amount: number;
+  paymentMethod: string;
+  occurredAt: string;
+};
+type SaleReceipt = {
+  receiptCode: string;
+  customerName: string;
+  customerPhone: string;
+  subtotal: number;
+  discount: number;
+  total: number;
+  paymentMethod: string;
+  installments: number;
+  soldAt: string;
+  items: {
+    name: string;
+    quantity: number;
+    unitPrice: number;
+    lineTotal: number;
+  }[];
+  installmentDates: {
+    number: number;
+    dueDate: string;
+    amount: number;
+    status: string;
+  }[];
+};
+type FinanceReport = {
+  startDate: string;
+  summary: {
+    income: number;
+    expenses: number;
+    balance: number;
+    sales: number;
+    outstanding: number;
+    costOfGoods: number;
+    estimatedProfit: number;
+  };
+  entries: CashEntry[];
+  receipts: SaleReceipt[];
+};
+type Dashboard = {
+  investment: number;
+  expectedRevenue: number;
+  expectedProfit: number;
+  salesTotal: number;
+  received: number;
+  pending: number;
+  overdueCount: number;
+  supplierPendingTotal: number;
+  supplierDueSoonCount: number;
+  supplierOverdueCount: number;
+};
+type Account = {
+  tenantId: string;
+  storeName: string;
+  slug: string;
+  ownerName: string;
+  role: string;
+  hasIndividualLogin: boolean;
+  isPlatformAdmin?: boolean;
+  storeUrl: string;
+};
+type Data = {
+  products: Product[];
+  customers: Customer[];
+  charges: Charge[];
+  supplierBills: SupplierBill[];
+  dashboard: Dashboard;
+  account?: Account;
+};
+const money = (v: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+    v || 0,
+  );
+const dateBR = (v: string) =>
+  new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" }).format(
+    new Date(`${v}T12:00:00`),
+  );
+const empty: Data = {
+  products: [],
+  customers: [],
+  charges: [],
+  supplierBills: [],
+  dashboard: {
+    investment: 0,
+    expectedRevenue: 0,
+    expectedProfit: 0,
+    salesTotal: 0,
+    received: 0,
+    pending: 0,
+    overdueCount: 0,
+    supplierPendingTotal: 0,
+    supplierDueSoonCount: 0,
+    supplierOverdueCount: 0,
+  },
+};
 const API_URL = "/api/admin";
 const OFFLINE_SALES_KEY = "wm_offline_sales_v1";
-type OfflineSale = { operationId:string; payload:Record<string,unknown>; createdAt:string };
-function readOfflineSales():OfflineSale[]{try{const value=JSON.parse(localStorage.getItem(OFFLINE_SALES_KEY)||"[]");return Array.isArray(value)?value:[]}catch{return []}}
-function writeOfflineSales(items:OfflineSale[]){localStorage.setItem(OFFLINE_SALES_KEY,JSON.stringify(items))}
+type OfflineSale = {
+  operationId: string;
+  payload: Record<string, unknown>;
+  createdAt: string;
+};
+function readOfflineSales(): OfflineSale[] {
+  try {
+    const value = JSON.parse(localStorage.getItem(OFFLINE_SALES_KEY) || "[]");
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+function writeOfflineSales(items: OfflineSale[]) {
+  localStorage.setItem(OFFLINE_SALES_KEY, JSON.stringify(items));
+}
 
-async function prepareProductPhoto(file:File){
-  if(!["image/jpeg","image/png","image/webp"].includes(file.type))throw new Error("Escolha uma foto JPG, PNG ou WebP.");
-  if(file.size>12*1024*1024)throw new Error("A foto original é muito grande. Escolha uma imagem de até 12 MB.");
-  const source=URL.createObjectURL(file);
-  try{
-    const image=await new Promise<HTMLImageElement>((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(new Error("Não foi possível abrir esta foto."));img.src=source});
-    const max=1200,scale=Math.min(1,max/Math.max(image.naturalWidth,image.naturalHeight));
-    const canvas=document.createElement("canvas");canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
-    canvas.getContext("2d")?.drawImage(image,0,0,canvas.width,canvas.height);
-    const result=canvas.toDataURL("image/jpeg",.8);
-    if(result.length>2.7*1024*1024)throw new Error("A foto ficou muito grande. Tente outra imagem.");
+async function prepareProductPhoto(file: File) {
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type))
+    throw new Error("Escolha uma foto JPG, PNG ou WebP.");
+  if (file.size > 12 * 1024 * 1024)
+    throw new Error(
+      "A foto original é muito grande. Escolha uma imagem de até 12 MB.",
+    );
+  const source = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () =>
+        reject(new Error("Não foi possível abrir esta foto."));
+      img.src = source;
+    });
+    const max = 1200,
+      scale = Math.min(
+        1,
+        max / Math.max(image.naturalWidth, image.naturalHeight),
+      );
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    canvas
+      .getContext("2d")
+      ?.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const result = canvas.toDataURL("image/jpeg", 0.8);
+    if (result.length > 2.7 * 1024 * 1024)
+      throw new Error("A foto ficou muito grande. Tente outra imagem.");
     return result;
-  }finally{URL.revokeObjectURL(source)}
+  } finally {
+    URL.revokeObjectURL(source);
+  }
 }
 
 export default function HomePage() {
-  const [data,setData]=useState<Data>(empty), [loading,setLoading]=useState(true), [error,setError]=useState("");
-  const [authenticated,setAuthenticated]=useState(false);
-  const [view,setView]=useState("inicio"), [modal,setModal]=useState<"product"|"customer"|"sale"|"scanner"|"saleScanner"|"supplierBill"|null>(null), [saving,setSaving]=useState(false);
-  const [saleProductId,setSaleProductId]=useState<string>("");
-  const [editingProduct,setEditingProduct]=useState<Product|null>(null);
-  const [search,setSearch]=useState(""), [toast,setToast]=useState(""), [offlineCount,setOfflineCount]=useState(0);
-  const syncingOffline=useRef(false);
-  async function api(action:string,payload:Record<string,unknown>={}){const token=localStorage.getItem("wm_session")||"";const r=await fetch(API_URL,{method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${token}`},body:JSON.stringify({action,...payload})});const j=await r.json();if(r.status===401&&!["login","email_login","signup_owner"].includes(action)){localStorage.removeItem("wm_session");setAuthenticated(false)}if(!r.ok)throw new Error(j.error);return j}
-  async function load(){ try { const j=await api("list"); setData(j); setAuthenticated(true); setError(""); } catch { setError("Não foi possível carregar seus dados agora."); } finally { setLoading(false); } }
-  useEffect(()=>{const token=localStorage.getItem("wm_session");if(token)void load();else setLoading(false)},[]);
-  useEffect(()=>{if("serviceWorker" in navigator)void navigator.serviceWorker.register("/sw.js")},[]);
-  useEffect(()=>{if(!authenticated)return;setOfflineCount(readOfflineSales().length);const reconnect=()=>void syncOfflineSales();window.addEventListener("online",reconnect);if(navigator.onLine)void syncOfflineSales();return()=>window.removeEventListener("online",reconnect)},[authenticated]);
-  useEffect(()=>{if(!authenticated||typeof Notification==="undefined"||Notification.permission!=="granted")return;const key=`wm-supplier-alert-${new Date().toISOString().slice(0,10)}`;if(localStorage.getItem(key)||!data.dashboard.supplierDueSoonCount)return;new Notification("WM Vendas — boletos próximos",{body:`${data.dashboard.supplierDueSoonCount} boleto(s) vencem nos próximos 3 dias.`,icon:"/favicon.svg"});localStorage.setItem(key,"1")},[authenticated,data.dashboard.supplierDueSoonCount]);
-  function notify(message:string){ setToast(message); setTimeout(()=>setToast(""),2600); }
-  async function submit(action:string,payload:Record<string,unknown>){ setSaving(true); try{const j=await api(action,payload);await load();setModal(null);if(action==="create_product"||action==="update_product")setEditingProduct(null);notify(j.message||"Salvo com sucesso");return j}catch(e){notify(e instanceof Error?e.message:"Não foi possível salvar");throw e}finally{setSaving(false)}}
-  async function submitExpressSale(action:string,payload:Record<string,unknown>){
-    setSaving(true);const operationId=String(payload.operationId||crypto.randomUUID());const safePayload={...payload,operationId};
-    try{const j=await api(action,safePayload);await load();notify(j.message||"Venda concluída");return j}
-    catch(e){if(!navigator.onLine||e instanceof TypeError){const queue=readOfflineSales();if(!queue.some(item=>item.operationId===operationId))writeOfflineSales([...queue,{operationId,payload:safePayload,createdAt:new Date().toISOString()}]);setOfflineCount(readOfflineSales().length);notify("Venda salva no celular. Será sincronizada quando a internet voltar.");return {queued:true,operationId}}notify(e instanceof Error?e.message:"Não foi possível concluir a venda");throw e}
-    finally{setSaving(false)}
+  const [data, setData] = useState<Data>(empty),
+    [loading, setLoading] = useState(true),
+    [error, setError] = useState("");
+  const [authenticated, setAuthenticated] = useState(false);
+  const [view, setView] = useState("inicio"),
+    [modal, setModal] = useState<
+      | "product"
+      | "customer"
+      | "sale"
+      | "scanner"
+      | "saleScanner"
+      | "supplierBill"
+      | null
+    >(null),
+    [saving, setSaving] = useState(false);
+  const [saleProductId, setSaleProductId] = useState<string>("");
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [search, setSearch] = useState(""),
+    [toast, setToast] = useState(""),
+    [offlineCount, setOfflineCount] = useState(0);
+  const syncingOffline = useRef(false);
+  async function api(action: string, payload: Record<string, unknown> = {}) {
+    const token = localStorage.getItem("wm_session") || "";
+    const r = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ action, ...payload }),
+    });
+    const j = await r.json();
+    if (
+      r.status === 401 &&
+      !["login", "email_login", "signup_owner"].includes(action)
+    ) {
+      localStorage.removeItem("wm_session");
+      setAuthenticated(false);
+    }
+    if (!r.ok) throw new Error(j.error);
+    return j;
   }
-  async function syncOfflineSales(){
-    if(syncingOffline.current||!navigator.onLine||!authenticated)return;const queue=readOfflineSales();if(!queue.length){setOfflineCount(0);return}
-    syncingOffline.current=true;const remaining:OfflineSale[]=[];let synced=0;
-    for(const item of queue){try{await api("create_express_sale",item.payload);synced++}catch{remaining.push(item)}}
-    writeOfflineSales(remaining);setOfflineCount(remaining.length);syncingOffline.current=false;
-    if(synced){await load();notify(`${synced} venda(s) offline sincronizada(s).`)}
+  async function load() {
+    try {
+      const j = await api("list");
+      setData(j);
+      setAuthenticated(true);
+      setError("");
+    } catch {
+      setError("Não foi possível carregar seus dados agora.");
+    } finally {
+      setLoading(false);
+    }
   }
-  async function login(action:string,payload:Record<string,unknown>){setSaving(true);try{const j=await api(action,payload);localStorage.setItem("wm_session",j.token);setAuthenticated(true);setLoading(true);await load()}finally{setSaving(false)}}
-  async function logout(){try{await api("logout")}catch{}localStorage.removeItem("wm_session");setAuthenticated(false);setData(empty)}
-  const visibleProducts=useMemo(()=>data.products.filter(p=>`${p.name} ${p.brand} ${p.barcode}`.toLowerCase().includes(search.toLowerCase())),[data.products,search]);
-  const alertCount=useMemo(()=>data.charges.filter(c=>c.status==="overdue"||Math.ceil((new Date(`${c.dueDate}T12:00:00`).getTime()-Date.now())/86400000)<=3).length+data.supplierBills.filter(b=>b.status!=="paid"&&b.daysUntilDue<=3).length+data.products.filter(p=>p.salePrice<=0||p.stock<=1).length,[data]);
-  function openSale(scan=false){setSaleProductId("");setModal(scan?"saleScanner":"sale")}
-  async function sellScanned(code:string){
-    const clean=code.trim();
-    try{
-      const result=await api("barcode_lookup",{barcode:clean});
-      if(!result.found||!result.registered){setEditingProduct(null);sessionStorage.setItem("wm-scanned-code",clean);setModal("product");notify("Produto não cadastrado. Complete o pré-cadastro.");return}
-      const found=result.product;
-      const product:Product={
-        id:Number(found.id),barcode:clean,name:String(found.name||"Produto"),brand:String(found.brand||"Outros"),
-        costPrice:Number(found.costPrice||0),salePrice:Number(found.salePrice||0),stock:Number(found.stock||0),photoUrl:found.imageUrl||null
+  useEffect(() => {
+    const token = localStorage.getItem("wm_session");
+    if (token) void load();
+    else setLoading(false);
+  }, []);
+  useEffect(() => {
+    if ("serviceWorker" in navigator)
+      void navigator.serviceWorker.register("/sw.js");
+  }, []);
+  useEffect(() => {
+    if (!authenticated) return;
+    setOfflineCount(readOfflineSales().length);
+    const reconnect = () => void syncOfflineSales();
+    window.addEventListener("online", reconnect);
+    if (navigator.onLine) void syncOfflineSales();
+    return () => window.removeEventListener("online", reconnect);
+  }, [authenticated]);
+  useEffect(() => {
+    if (
+      !authenticated ||
+      typeof Notification === "undefined" ||
+      Notification.permission !== "granted"
+    )
+      return;
+    const key = `wm-supplier-alert-${new Date().toISOString().slice(0, 10)}`;
+    if (localStorage.getItem(key) || !data.dashboard.supplierDueSoonCount)
+      return;
+    new Notification("WM Vendas — boletos próximos", {
+      body: `${data.dashboard.supplierDueSoonCount} boleto(s) vencem nos próximos 3 dias.`,
+      icon: "/favicon.svg",
+    });
+    localStorage.setItem(key, "1");
+  }, [authenticated, data.dashboard.supplierDueSoonCount]);
+  function notify(message: string) {
+    setToast(message);
+    setTimeout(() => setToast(""), 2600);
+  }
+  async function submit(action: string, payload: Record<string, unknown>) {
+    setSaving(true);
+    try {
+      const j = await api(action, payload);
+      await load();
+      setModal(null);
+      if (action === "create_product" || action === "update_product")
+        setEditingProduct(null);
+      notify(j.message || "Salvo com sucesso");
+      return j;
+    } catch (e) {
+      notify(e instanceof Error ? e.message : "Não foi possível salvar");
+      throw e;
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function submitExpressSale(
+    action: string,
+    payload: Record<string, unknown>,
+  ) {
+    setSaving(true);
+    const operationId = String(payload.operationId || crypto.randomUUID());
+    const safePayload = { ...payload, operationId };
+    try {
+      const j = await api(action, safePayload);
+      await load();
+      notify(j.message || "Venda concluída");
+      return j;
+    } catch (e) {
+      if (!navigator.onLine || e instanceof TypeError) {
+        const queue = readOfflineSales();
+        if (!queue.some((item) => item.operationId === operationId))
+          writeOfflineSales([
+            ...queue,
+            {
+              operationId,
+              payload: safePayload,
+              createdAt: new Date().toISOString(),
+            },
+          ]);
+        setOfflineCount(readOfflineSales().length);
+        notify(
+          "Venda salva no celular. Será sincronizada quando a internet voltar.",
+        );
+        return { queued: true, operationId };
+      }
+      notify(
+        e instanceof Error ? e.message : "Não foi possível concluir a venda",
+      );
+      throw e;
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function syncOfflineSales() {
+    if (syncingOffline.current || !navigator.onLine || !authenticated) return;
+    const queue = readOfflineSales();
+    if (!queue.length) {
+      setOfflineCount(0);
+      return;
+    }
+    syncingOffline.current = true;
+    const remaining: OfflineSale[] = [];
+    let synced = 0;
+    for (const item of queue) {
+      try {
+        await api("create_express_sale", item.payload);
+        synced++;
+      } catch {
+        remaining.push(item);
+      }
+    }
+    writeOfflineSales(remaining);
+    setOfflineCount(remaining.length);
+    syncingOffline.current = false;
+    if (synced) {
+      await load();
+      notify(`${synced} venda(s) offline sincronizada(s).`);
+    }
+  }
+  async function login(action: string, payload: Record<string, unknown>) {
+    setSaving(true);
+    try {
+      const j = await api(action, payload);
+      localStorage.setItem("wm_session", j.token);
+      setAuthenticated(true);
+      setLoading(true);
+      await load();
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function logout() {
+    try {
+      await api("logout");
+    } catch {}
+    localStorage.removeItem("wm_session");
+    setAuthenticated(false);
+    setData(empty);
+  }
+  const visibleProducts = useMemo(
+    () =>
+      data.products.filter((p) =>
+        `${p.name} ${p.brand} ${p.barcode}`
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+      ),
+    [data.products, search],
+  );
+  const alertCount = useMemo(
+    () =>
+      data.charges.filter(
+        (c) =>
+          c.status === "overdue" ||
+          Math.ceil(
+            (new Date(`${c.dueDate}T12:00:00`).getTime() - Date.now()) /
+              86400000,
+          ) <= 3,
+      ).length +
+      data.supplierBills.filter(
+        (b) => b.status !== "paid" && b.daysUntilDue <= 3,
+      ).length +
+      data.products.filter((p) => p.salePrice <= 0 || p.stock <= 1).length,
+    [data],
+  );
+  function openSale(scan = false) {
+    setSaleProductId("");
+    setModal(scan ? "saleScanner" : "sale");
+  }
+  async function sellScanned(code: string) {
+    const clean = code.trim();
+    try {
+      const result = await api("barcode_lookup", { barcode: clean });
+      if (!result.found || !result.registered) {
+        setEditingProduct(null);
+        sessionStorage.setItem("wm-scanned-code", clean);
+        setModal("product");
+        notify("Produto não cadastrado. Complete o pré-cadastro.");
+        return;
+      }
+      const found = result.product;
+      const product: Product = {
+        id: Number(found.id),
+        barcode: clean,
+        name: String(found.name || "Produto"),
+        brand: String(found.brand || "Outros"),
+        costPrice: Number(found.costPrice || 0),
+        salePrice: Number(found.salePrice || 0),
+        stock: Number(found.stock || 0),
+        photoUrl: found.imageUrl || null,
       };
-      setData(current=>({...current,products:current.products.some(item=>item.id===product.id)?current.products.map(item=>item.id===product.id?{...item,...product}:item):[...current.products,product]}));
-      if(product.salePrice<=0){setEditingProduct(product);setModal("product");notify(`${product.name} está pré-cadastrado. Informe os preços e o estoque.`);return}
-      if(product.stock<1){setEditingProduct(product);setModal("product");notify(`${product.name} está sem estoque. Faça a entrada da mercadoria.`);return}
-      setSaleProductId(String(product.id));setModal("sale");notify(`${product.name} adicionado por ${money(product.salePrice)}`)
-    }catch(e){setModal(null);notify(e instanceof Error?e.message:"Não foi possível consultar este produto.")}
+      setData((current) => ({
+        ...current,
+        products: current.products.some((item) => item.id === product.id)
+          ? current.products.map((item) =>
+              item.id === product.id ? { ...item, ...product } : item,
+            )
+          : [...current.products, product],
+      }));
+      if (product.salePrice <= 0) {
+        setEditingProduct(product);
+        setModal("product");
+        notify(
+          `${product.name} está pré-cadastrado. Informe os preços e o estoque.`,
+        );
+        return;
+      }
+      if (product.stock < 1) {
+        setEditingProduct(product);
+        setModal("product");
+        notify(
+          `${product.name} está sem estoque. Faça a entrada da mercadoria.`,
+        );
+        return;
+      }
+      setSaleProductId(String(product.id));
+      setModal("sale");
+      notify(`${product.name} adicionado por ${money(product.salePrice)}`);
+    } catch (e) {
+      setModal(null);
+      notify(
+        e instanceof Error
+          ? e.message
+          : "Não foi possível consultar este produto.",
+      );
+    }
   }
-  const role=data.account?.role||"owner",canManage=role==="owner"||role==="admin";
-  const items:[string,any,string][]=[["inicio",Home,"Início"],["produtos",ShoppingBag,"Produtos"],["vendas",CircleDollarSign,"Vendas"],["clientes",Users,"Clientes"],["cobrancas",Bell,"Cobranças"],...(canManage?([["fornecedores",ReceiptText,"Boletos"],["financeiro",Wallet,"Caixa"],["loja",Store,"Loja"],["equipe",UserPlus,"Equipe"]] as [string,any,string][]):[]),...(data.account?.isPlatformAdmin?([["plataforma",Building2,"Lojistas"]] as [string,any,string][]):[])];
-  if(!authenticated)return <LoginScreen login={login} loading={saving}/>;
-  return <main className="min-h-screen pb-24 lg:pb-8">
-    <header className="topbar"><div className="brand"><span className="brand-mark">{(data.account?.storeName||"WM").split(/\s+/).map(x=>x[0]).join("").slice(0,2).toUpperCase()}</span><div><strong>{data.account?.storeName||"WM Vendas"}</strong><small>{data.account?.ownerName||"Walquíria Maia"}</small></div></div><div className="top-actions">{offlineCount>0&&<span className="offline-badge"><span>{offlineCount}</span> pendente(s)</span>}<InstallButton compact/><button className="icon-btn" aria-label="Sair" onClick={logout}><LogOut/></button><button className="icon-btn" aria-label="Central de alertas" onClick={()=>setView("alertas")}><Bell/><i>{alertCount}</i></button></div></header>
-    <div className="mobile-install"><InstallButton/></div><div className="app-shell">
-      <aside className="sidebar"><nav>{items.map(([id,Icon,label])=><button key={id} className={view===id?"active":""} onClick={()=>setView(id)}><Icon/><span>{label}</span></button>)}</nav><div className="signature"><Sparkles/><span>Feito para vender<br/><b>com tranquilidade</b></span></div></aside>
-      <section className="content">{loading?<div className="center"><Loader2 className="spin"/> Carregando…</div>:error?<div className="error"><AlertCircle/>{error}<Button onClick={load}>Tentar novamente</Button></div>:<>
-        {view==="inicio"&&<DashboardView data={data} open={setModal} openSale={openSale} setView={setView}/>} 
-        {view==="alertas"&&<AlertsView data={data} setView={setView} editProduct={product=>{setEditingProduct(product);setModal("product")}}/>} 
-        {view==="produtos"&&<ProductsView products={visibleProducts} search={search} setSearch={setSearch} open={()=>{setEditingProduct(null);setModal("product")}} edit={product=>{setEditingProduct(product);setModal("product")}}/>} 
-        {view==="clientes"&&<CustomersView customers={data.customers} open={()=>setModal("customer")}/>}
-        {view==="vendas"&&<SalesView data={data} open={()=>openSale(false)} scan={()=>openSale(true)}/>} 
-        {view==="cobrancas"&&<ChargesView charges={data.charges} pay={(id)=>submit("mark_paid",{id})}/>} 
-        {view==="fornecedores"&&<SupplierBillsView bills={data.supplierBills} dashboard={data.dashboard} open={()=>setModal("supplierBill")} pay={(id)=>submit("mark_supplier_bill_paid",{id})}/>} 
-        {view==="financeiro"&&<FinanceView api={api} notify={notify}/>} 
-        {view==="loja"&&<StoreAdmin api={api} notify={notify}/>} 
-        {view==="equipe"&&canManage&&<TeamView api={api} notify={notify} currentRole={role} hasIndividualLogin={!!data.account?.hasIndividualLogin}/>} 
-        {view==="plataforma"&&data.account?.isPlatformAdmin&&<PlatformAdmin api={api} notify={notify}/>} 
-      </>}</section>
+  const role = data.account?.role || "owner",
+    canManage = role === "owner" || role === "admin";
+  const items: [string, any, string][] = [
+    ["inicio", Home, "Início"],
+    ["produtos", ShoppingBag, "Produtos"],
+    ["vendas", CircleDollarSign, "Vendas"],
+    ["clientes", Users, "Clientes"],
+    ["cobrancas", Bell, "Cobranças"],
+    ...(canManage
+      ? ([
+          ["fornecedores", ReceiptText, "Boletos"],
+          ["financeiro", Wallet, "Caixa"],
+          ["loja", Store, "Loja"],
+          ["equipe", UserPlus, "Equipe"],
+        ] as [string, any, string][])
+      : []),
+    ...(data.account?.isPlatformAdmin
+      ? ([["plataforma", Building2, "Lojistas"]] as [string, any, string][])
+      : []),
+  ];
+  if (!authenticated) return <LoginScreen login={login} loading={saving} />;
+  return (
+    <main className="min-h-screen pb-24 lg:pb-8">
+      <header className="topbar">
+        <div className="brand">
+          <span className="brand-mark">
+            {(data.account?.storeName || "WM")
+              .split(/\s+/)
+              .map((x) => x[0])
+              .join("")
+              .slice(0, 2)
+              .toUpperCase()}
+          </span>
+          <div>
+            <strong>{data.account?.storeName || "WM Vendas"}</strong>
+            <small>{data.account?.ownerName || "Walquíria Maia"}</small>
+          </div>
+        </div>
+        <div className="top-actions">
+          {offlineCount > 0 && (
+            <span className="offline-badge">
+              <span>{offlineCount}</span> pendente(s)
+            </span>
+          )}
+          <InstallButton compact />
+          <button className="icon-btn" aria-label="Sair" onClick={logout}>
+            <LogOut />
+          </button>
+          <button
+            className="icon-btn"
+            aria-label="Central de alertas"
+            onClick={() => setView("alertas")}
+          >
+            <Bell />
+            <i>{alertCount}</i>
+          </button>
+        </div>
+      </header>
+      <div className="mobile-install">
+        <InstallButton />
+      </div>
+      <div className="app-shell">
+        <aside className="sidebar">
+          <nav>
+            {items.map(([id, Icon, label]) => (
+              <button
+                key={id}
+                className={view === id ? "active" : ""}
+                onClick={() => setView(id)}
+              >
+                <Icon />
+                <span>{label}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="signature">
+            <Sparkles />
+            <span>
+              Feito para vender
+              <br />
+              <b>com tranquilidade</b>
+            </span>
+          </div>
+        </aside>
+        <section className="content">
+          {loading ? (
+            <div className="center">
+              <Loader2 className="spin" /> Carregando…
+            </div>
+          ) : error ? (
+            <div className="error">
+              <AlertCircle />
+              {error}
+              <Button onClick={load}>Tentar novamente</Button>
+            </div>
+          ) : (
+            <>
+              {view === "inicio" && (
+                <DashboardView
+                  data={data}
+                  open={setModal}
+                  openSale={openSale}
+                  setView={setView}
+                />
+              )}
+              {view === "alertas" && (
+                <AlertsView
+                  data={data}
+                  setView={setView}
+                  editProduct={(product) => {
+                    setEditingProduct(product);
+                    setModal("product");
+                  }}
+                />
+              )}
+              {view === "produtos" && (
+                <ProductsView
+                  products={visibleProducts}
+                  search={search}
+                  setSearch={setSearch}
+                  open={() => {
+                    setEditingProduct(null);
+                    setModal("product");
+                  }}
+                  edit={(product) => {
+                    setEditingProduct(product);
+                    setModal("product");
+                  }}
+                />
+              )}
+              {view === "clientes" && (
+                <CustomersView
+                  customers={data.customers}
+                  open={() => setModal("customer")}
+                />
+              )}
+              {view === "vendas" && (
+                <SalesView
+                  data={data}
+                  open={() => openSale(false)}
+                  scan={() => openSale(true)}
+                />
+              )}
+              {view === "cobrancas" && (
+                <ChargesView
+                  charges={data.charges}
+                  pay={(id) => submit("mark_paid", { id })}
+                />
+              )}
+              {view === "fornecedores" && (
+                <SupplierBillsView
+                  bills={data.supplierBills}
+                  dashboard={data.dashboard}
+                  open={() => setModal("supplierBill")}
+                  pay={(id) => submit("mark_supplier_bill_paid", { id })}
+                />
+              )}
+              {view === "financeiro" && (
+                <FinanceView api={api} notify={notify} />
+              )}
+              {view === "loja" && <StoreAdmin api={api} notify={notify} />}
+              {view === "equipe" && canManage && (
+                <TeamView
+                  api={api}
+                  notify={notify}
+                  currentRole={role}
+                  hasIndividualLogin={!!data.account?.hasIndividualLogin}
+                />
+              )}
+              {view === "plataforma" && data.account?.isPlatformAdmin && (
+                <PlatformAdmin api={api} notify={notify} />
+              )}
+            </>
+          )}
+        </section>
+      </div>
+      <nav className="bottom-nav">
+        {items.map(([id, Icon, label]) => (
+          <button
+            key={id}
+            className={view === id ? "active" : ""}
+            onClick={() => (id === "vendas" ? openSale(true) : setView(id))}
+          >
+            <Icon />
+            <span>{id === "cobrancas" ? "Cobrar" : label}</span>
+          </button>
+        ))}
+      </nav>
+      <ProductDialog
+        open={modal === "product"}
+        close={() => setModal(null)}
+        save={submit}
+        saving={saving}
+        scan={() => setModal("scanner")}
+        lookup={(barcode) => api("barcode_lookup", { barcode })}
+        onExisting={(id) => {
+          const existing = data.products.find((item) => item.id === id);
+          if (existing) {
+            setEditingProduct(existing);
+            notify(
+              "Produto já cadastrado. Preços e estoque carregados para edição.",
+            );
+          }
+        }}
+        product={editingProduct}
+      />
+      <CustomerDialog
+        open={modal === "customer"}
+        close={() => setModal(null)}
+        save={submit}
+        saving={saving}
+      />
+      <SaleDialog
+        open={modal === "sale"}
+        close={() => setModal(null)}
+        save={submitExpressSale}
+        saving={saving}
+        data={data}
+        initialProductId={saleProductId}
+      />
+      <SupplierBillDialog
+        open={modal === "supplierBill"}
+        close={() => setModal(null)}
+        save={submit}
+        saving={saving}
+      />
+      <ScannerDialog
+        open={modal === "scanner"}
+        close={() => setModal("product")}
+        onCode={(code) => {
+          sessionStorage.setItem("wm-scanned-code", code);
+          setModal("product");
+        }}
+      />
+      <ScannerDialog
+        open={modal === "saleScanner"}
+        close={() => setModal(null)}
+        onCode={sellScanned}
+        purpose="sale"
+      />
+      {toast && (
+        <div className="toast">
+          <Check />
+          {toast}
+        </div>
+      )}
+    </main>
+  );
+}
+
+function LoginScreen({
+  login,
+  loading,
+}: {
+  login: (action: string, payload: Record<string, unknown>) => Promise<void>;
+  loading: boolean;
+}) {
+  const [mode, setMode] = useState<"email" | "pin">("email"),
+    [error, setError] = useState("");
+  async function send(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError("");
+    const values = Object.fromEntries(new FormData(e.currentTarget));
+    try {
+      await login(mode === "pin" ? "login" : "email_login", values);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível entrar");
+    }
+  }
+  return (
+    <main className="login-page">
+      <section className="login-card multi-login">
+        <span className="login-mark">WM</span>
+        <small>GESTÃO E LOJA VIRTUAL</small>
+        <h1>{mode === "pin" ? "Acesso WM Vendas" : "Entre na sua conta"}</h1>
+        <p>
+          {mode === "pin"
+            ? "Acesso de 6 números da Walquíria."
+            : "Acesse a gestão exclusiva da sua empresa."}
+        </p>
+        <div className="login-modes">
+          <button
+            type="button"
+            className={mode === "email" ? "active" : ""}
+            onClick={() => {
+              setMode("email");
+              setError("");
+            }}
+          >
+            E-mail e senha
+          </button>
+          <button
+            type="button"
+            className={mode === "pin" ? "active" : ""}
+            onClick={() => {
+              setMode("pin");
+              setError("");
+            }}
+          >
+            PIN antigo
+          </button>
+        </div>
+        <form onSubmit={send}>
+          {mode === "pin" ? (
+            <>
+              <Label htmlFor="pin">PIN de acesso</Label>
+              <div className="pin-field">
+                <LockKeyhole />
+                <Input
+                  id="pin"
+                  name="pin"
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  autoComplete="current-password"
+                  placeholder="••••••"
+                  required
+                  autoFocus
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <Label htmlFor="email">E-mail</Label>
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                autoFocus
+                placeholder="voce@exemplo.com"
+              />
+              <Label htmlFor="password">Senha</Label>
+              <Input
+                id="password"
+                name="password"
+                type="password"
+                minLength={8}
+                autoComplete="current-password"
+                required
+                placeholder="Mínimo de 8 caracteres"
+              />
+            </>
+          )}
+          {error && (
+            <span className="login-error">
+              <AlertCircle />
+              {error}
+            </span>
+          )}
+          <Button type="submit" disabled={loading}>
+            {loading ? <Loader2 className="spin" /> : <LockKeyhole />} Entrar
+          </Button>
+        </form>
+        <a
+          className="login-contact"
+          href="https://wa.me/5591984855557?text=Ol%C3%A1%21%20Quero%20ter%20minha%20pr%C3%B3pria%20loja%20online%20no%20WM%20Vendas."
+          target="_blank"
+          rel="noreferrer"
+        >
+          <Store /> Quero minha própria loja online
+        </a>
+        <footer>
+          Novos acessos são criados pela administração. Seus dados ficam
+          protegidos e separados.
+        </footer>
+      </section>
+    </main>
+  );
+}
+
+function PageTitle({
+  eyebrow,
+  title,
+  action,
+}: {
+  eyebrow: string;
+  title: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="page-title">
+      <div>
+        <small>{eyebrow}</small>
+        <h1>{title}</h1>
+      </div>
+      {action}
     </div>
-    <nav className="bottom-nav">{items.map(([id,Icon,label])=><button key={id} className={view===id?"active":""} onClick={()=>id==="vendas"?openSale(true):setView(id)}><Icon/><span>{id==="cobrancas"?"Cobrar":label}</span></button>)}</nav>
-    <ProductDialog open={modal==="product"} close={()=>setModal(null)} save={submit} saving={saving} scan={()=>setModal("scanner")} lookup={(barcode)=>api("barcode_lookup",{barcode})} onExisting={id=>{const existing=data.products.find(item=>item.id===id);if(existing){setEditingProduct(existing);notify("Produto já cadastrado. Preços e estoque carregados para edição.")}}} product={editingProduct}/>
-    <CustomerDialog open={modal==="customer"} close={()=>setModal(null)} save={submit} saving={saving}/>
-    <SaleDialog open={modal==="sale"} close={()=>setModal(null)} save={submitExpressSale} saving={saving} data={data} initialProductId={saleProductId}/>
-    <SupplierBillDialog open={modal==="supplierBill"} close={()=>setModal(null)} save={submit} saving={saving}/>
-    <ScannerDialog open={modal==="scanner"} close={()=>setModal("product")} onCode={(code)=>{sessionStorage.setItem("wm-scanned-code",code);setModal("product")}}/>
-    <ScannerDialog open={modal==="saleScanner"} close={()=>setModal(null)} onCode={sellScanned} purpose="sale"/>
-    {toast&&<div className="toast"><Check/>{toast}</div>}
-  </main>;
+  );
 }
-
-function LoginScreen({login,loading}:{login:(action:string,payload:Record<string,unknown>)=>Promise<void>;loading:boolean}){
-  const [mode,setMode]=useState<"email"|"pin">("email"),[error,setError]=useState("");
-  async function send(e:FormEvent<HTMLFormElement>){e.preventDefault();setError("");const values=Object.fromEntries(new FormData(e.currentTarget));try{await login(mode==="pin"?"login":"email_login",values)}catch(err){setError(err instanceof Error?err.message:"Não foi possível entrar")}}
-  return <main className="login-page"><section className="login-card multi-login"><span className="login-mark">WM</span><small>GESTÃO E LOJA VIRTUAL</small><h1>{mode==="pin"?"Acesso WM Vendas":"Entre na sua conta"}</h1><p>{mode==="pin"?"Acesso de 6 números da Walquíria.":"Acesse a gestão exclusiva da sua empresa."}</p><div className="login-modes"><button type="button" className={mode==="email"?"active":""} onClick={()=>{setMode("email");setError("")}}>E-mail e senha</button><button type="button" className={mode==="pin"?"active":""} onClick={()=>{setMode("pin");setError("")}}>PIN antigo</button></div><form onSubmit={send}>
-    {mode==="pin"?<><Label htmlFor="pin">PIN de acesso</Label><div className="pin-field"><LockKeyhole/><Input id="pin" name="pin" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="current-password" placeholder="••••••" required autoFocus/></div></>:<><Label htmlFor="email">E-mail</Label><Input id="email" name="email" type="email" autoComplete="email" required autoFocus placeholder="voce@exemplo.com"/><Label htmlFor="password">Senha</Label><Input id="password" name="password" type="password" minLength={8} autoComplete="current-password" required placeholder="Mínimo de 8 caracteres"/></>}
-    {error&&<span className="login-error"><AlertCircle/>{error}</span>}<Button type="submit" disabled={loading}>{loading?<Loader2 className="spin"/>:<LockKeyhole/>} Entrar</Button></form><a className="login-contact" href="https://wa.me/5591984855557?text=Ol%C3%A1%21%20Quero%20ter%20minha%20pr%C3%B3pria%20loja%20online%20no%20WM%20Vendas." target="_blank" rel="noreferrer"><Store/> Quero minha própria loja online</a><footer>Novos acessos são criados pela administração. Seus dados ficam protegidos e separados.</footer></section></main>
+function InstallButton({ compact = false }: { compact?: boolean }) {
+  const [prompt, setPrompt] = useState<{
+      prompt: () => Promise<void>;
+      userChoice: Promise<{ outcome: string }>;
+    } | null>(null),
+    [help, setHelp] = useState(false),
+    [installed, setInstalled] = useState(false);
+  useEffect(() => {
+    const standalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true;
+    setInstalled(standalone);
+    const capture = (event: Event) => {
+      event.preventDefault();
+      setPrompt(
+        event as unknown as {
+          prompt: () => Promise<void>;
+          userChoice: Promise<{ outcome: string }>;
+        },
+      );
+    };
+    const done = () => setInstalled(true);
+    window.addEventListener("beforeinstallprompt", capture);
+    window.addEventListener("appinstalled", done);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", capture);
+      window.removeEventListener("appinstalled", done);
+    };
+  }, []);
+  if (installed)
+    return compact ? (
+      <span className="installed-badge">
+        <Check /> Instalado
+      </span>
+    ) : null;
+  async function install() {
+    if (prompt) {
+      await prompt.prompt();
+      const choice = await prompt.userChoice;
+      if (choice.outcome === "accepted") setInstalled(true);
+      setPrompt(null);
+    } else setHelp(true);
+  }
+  return (
+    <>
+      <Button
+        className={compact ? "install-compact" : "install-wide"}
+        variant={compact ? "outline" : "default"}
+        onClick={install}
+      >
+        <Download />
+        {compact ? "Instalar" : "Instalar WM Vendas no celular"}
+      </Button>
+      <Dialog open={help} onOpenChange={setHelp}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Instalar no celular</DialogTitle>
+            <DialogDescription>
+              O aplicativo ficará com um ícone na tela inicial, como os outros
+              aplicativos.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="install-steps">
+            <div>
+              <span>1</span>
+              <Share />
+              <p>
+                <b>No iPhone</b>Toque em Compartilhar e depois em “Adicionar à
+                Tela de Início”.
+              </p>
+            </div>
+            <div>
+              <span>2</span>
+              <Smartphone />
+              <p>
+                <b>No Android</b>Abra o menu do navegador e toque em “Instalar
+                aplicativo”.
+              </p>
+            </div>
+          </div>
+          <Button onClick={() => setHelp(false)}>Entendi</Button>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 }
-
-function PageTitle({eyebrow,title,action}:{eyebrow:string;title:string;action?:React.ReactNode}){return <div className="page-title"><div><small>{eyebrow}</small><h1>{title}</h1></div>{action}</div>}
-function InstallButton({compact=false}:{compact?:boolean}){
-  const [prompt,setPrompt]=useState<{prompt:()=>Promise<void>;userChoice:Promise<{outcome:string}>}|null>(null),[help,setHelp]=useState(false),[installed,setInstalled]=useState(false);
-  useEffect(()=>{const standalone=window.matchMedia("(display-mode: standalone)").matches||(navigator as Navigator & {standalone?:boolean}).standalone===true;setInstalled(standalone);const capture=(event:Event)=>{event.preventDefault();setPrompt(event as unknown as {prompt:()=>Promise<void>;userChoice:Promise<{outcome:string}>})};const done=()=>setInstalled(true);window.addEventListener("beforeinstallprompt",capture);window.addEventListener("appinstalled",done);return()=>{window.removeEventListener("beforeinstallprompt",capture);window.removeEventListener("appinstalled",done)}},[]);
-  if(installed)return compact?<span className="installed-badge"><Check/> Instalado</span>:null;
-  async function install(){if(prompt){await prompt.prompt();const choice=await prompt.userChoice;if(choice.outcome==="accepted")setInstalled(true);setPrompt(null)}else setHelp(true)}
-  return <><Button className={compact?"install-compact":"install-wide"} variant={compact?"outline":"default"} onClick={install}><Download/>{compact?"Instalar":"Instalar WM Vendas no celular"}</Button><Dialog open={help} onOpenChange={setHelp}><DialogContent><DialogHeader><DialogTitle>Instalar no celular</DialogTitle><DialogDescription>O aplicativo ficará com um ícone na tela inicial, como os outros aplicativos.</DialogDescription></DialogHeader><div className="install-steps"><div><span>1</span><Share/><p><b>No iPhone</b>Toque em Compartilhar e depois em “Adicionar à Tela de Início”.</p></div><div><span>2</span><Smartphone/><p><b>No Android</b>Abra o menu do navegador e toque em “Instalar aplicativo”.</p></div></div><Button onClick={()=>setHelp(false)}>Entendi</Button></DialogContent></Dialog></>
+function DashboardView({
+  data,
+  open,
+  openSale,
+  setView,
+}: {
+  data: Data;
+  open: (v: any) => void;
+  openSale: (scan?: boolean) => void;
+  setView: (v: string) => void;
+}) {
+  const d = data.dashboard;
+  return (
+    <>
+      <PageTitle
+        eyebrow="VISÃO GERAL"
+        title="Olá, Walquíria 👋"
+        action={
+          <Button onClick={() => openSale(true)}>
+            <Barcode /> Vender com câmera
+          </Button>
+        }
+      />
+      <div className="stats">
+        <article className="stat primary">
+          <div>
+            <small>Vendas realizadas</small>
+            <strong>{money(d.salesTotal)}</strong>
+            <span>valor total vendido</span>
+          </div>
+          <span className="stat-icon">
+            <TrendingUp />
+          </span>
+        </article>
+        <article className="stat">
+          <div>
+            <small>Lucro previsto</small>
+            <strong>{money(d.expectedProfit)}</strong>
+            <span>em todo o estoque</span>
+          </div>
+          <span className="stat-icon gold">
+            <Sparkles />
+          </span>
+        </article>
+        <article className="stat">
+          <div>
+            <small>A receber</small>
+            <strong>{money(d.pending)}</strong>
+            <span>{d.overdueCount} cobrança(s) atrasada(s)</span>
+          </div>
+          <span className="stat-icon pink">
+            <Wallet />
+          </span>
+        </article>
+      </div>
+      {(d.supplierDueSoonCount > 0 || d.supplierOverdueCount > 0) && (
+        <button
+          className="supplier-reminder"
+          onClick={() => setView("fornecedores")}
+        >
+          <CalendarClock />
+          <span>
+            <b>
+              {d.supplierOverdueCount
+                ? `${d.supplierOverdueCount} boleto(s) de fornecedor vencido(s)`
+                : `${d.supplierDueSoonCount} boleto(s) vencem em até 3 dias`}
+            </b>
+            <small>Total pendente: {money(d.supplierPendingTotal)}</small>
+          </span>
+          <ChevronRight />
+        </button>
+      )}
+      <div className="dashboard-grid">
+        <section className="panel">
+          <div className="panel-head">
+            <div>
+              <small>ATALHOS</small>
+              <h2>O que vamos fazer?</h2>
+            </div>
+          </div>
+          <div className="quick-grid">
+            <button onClick={() => open("product")}>
+              <span>
+                <PackagePlus />
+              </span>
+              <b>Novo produto</b>
+              <small>Cadastre pelo código</small>
+              <ChevronRight />
+            </button>
+            <button onClick={() => openSale(true)}>
+              <span>
+                <Barcode />
+              </span>
+              <b>Vender com câmera</b>
+              <small>Leia o código e veja o preço</small>
+              <ChevronRight />
+            </button>
+            <button onClick={() => open("customer")}>
+              <span>
+                <UserPlus />
+              </span>
+              <b>Novo cliente</b>
+              <small>Nome e WhatsApp</small>
+              <ChevronRight />
+            </button>
+            <button onClick={() => setView("cobrancas")}>
+              <span>
+                <Bell />
+              </span>
+              <b>Ver cobranças</b>
+              <small>Próximas e atrasadas</small>
+              <ChevronRight />
+            </button>
+            <button onClick={() => open("supplierBill")}>
+              <span>
+                <ReceiptText />
+              </span>
+              <b>Novo boleto</b>
+              <small>Conta de fornecedor</small>
+              <ChevronRight />
+            </button>
+          </div>
+        </section>
+        <section className="panel charges-preview">
+          <div className="panel-head">
+            <div>
+              <small>PRÓXIMOS RECEBIMENTOS</small>
+              <h2>Cobranças</h2>
+            </div>
+            <button onClick={() => setView("cobrancas")}>Ver todas</button>
+          </div>
+          {data.charges.slice(0, 4).map((c) => (
+            <ChargeRow key={c.id} c={c} />
+          ))}
+          {!data.charges.length && (
+            <Empty icon={Bell} text="Nenhuma cobrança pendente" />
+          )}
+        </section>
+      </div>
+      <section className="stock-strip">
+        <div>
+          <Box />
+          <span>
+            <small>Investido em estoque</small>
+            <b>{money(d.investment)}</b>
+          </span>
+        </div>
+        <div>
+          <ShoppingBag />
+          <span>
+            <small>Produtos cadastrados</small>
+            <b>{data.products.length} itens</b>
+          </span>
+        </div>
+        <div>
+          <TrendingUp />
+          <span>
+            <small>Faturamento possível</small>
+            <b>{money(d.expectedRevenue)}</b>
+          </span>
+        </div>
+      </section>
+    </>
+  );
 }
-function DashboardView({data,open,openSale,setView}:{data:Data;open:(v:any)=>void;openSale:(scan?:boolean)=>void;setView:(v:string)=>void}){const d=data.dashboard;return <><PageTitle eyebrow="VISÃO GERAL" title="Olá, Walquíria 👋" action={<Button onClick={()=>openSale(true)}><Barcode/> Vender com câmera</Button>}/><div className="stats"><article className="stat primary"><div><small>Vendas realizadas</small><strong>{money(d.salesTotal)}</strong><span>valor total vendido</span></div><span className="stat-icon"><TrendingUp/></span></article><article className="stat"><div><small>Lucro previsto</small><strong>{money(d.expectedProfit)}</strong><span>em todo o estoque</span></div><span className="stat-icon gold"><Sparkles/></span></article><article className="stat"><div><small>A receber</small><strong>{money(d.pending)}</strong><span>{d.overdueCount} cobrança(s) atrasada(s)</span></div><span className="stat-icon pink"><Wallet/></span></article></div>{(d.supplierDueSoonCount>0||d.supplierOverdueCount>0)&&<button className="supplier-reminder" onClick={()=>setView("fornecedores")}><CalendarClock/><span><b>{d.supplierOverdueCount?`${d.supplierOverdueCount} boleto(s) de fornecedor vencido(s)`:`${d.supplierDueSoonCount} boleto(s) vencem em até 3 dias`}</b><small>Total pendente: {money(d.supplierPendingTotal)}</small></span><ChevronRight/></button>}<div className="dashboard-grid"><section className="panel"><div className="panel-head"><div><small>ATALHOS</small><h2>O que vamos fazer?</h2></div></div><div className="quick-grid"><button onClick={()=>open("product")}><span><PackagePlus/></span><b>Novo produto</b><small>Cadastre pelo código</small><ChevronRight/></button><button onClick={()=>openSale(true)}><span><Barcode/></span><b>Vender com câmera</b><small>Leia o código e veja o preço</small><ChevronRight/></button><button onClick={()=>open("customer")}><span><UserPlus/></span><b>Novo cliente</b><small>Nome e WhatsApp</small><ChevronRight/></button><button onClick={()=>setView("cobrancas")}><span><Bell/></span><b>Ver cobranças</b><small>Próximas e atrasadas</small><ChevronRight/></button><button onClick={()=>open("supplierBill")}><span><ReceiptText/></span><b>Novo boleto</b><small>Conta de fornecedor</small><ChevronRight/></button></div></section><section className="panel charges-preview"><div className="panel-head"><div><small>PRÓXIMOS RECEBIMENTOS</small><h2>Cobranças</h2></div><button onClick={()=>setView("cobrancas")}>Ver todas</button></div>{data.charges.slice(0,4).map(c=><ChargeRow key={c.id} c={c}/>)}{!data.charges.length&&<Empty icon={Bell} text="Nenhuma cobrança pendente"/>}</section></div><section className="stock-strip"><div><Box/><span><small>Investido em estoque</small><b>{money(d.investment)}</b></span></div><div><ShoppingBag/><span><small>Produtos cadastrados</small><b>{data.products.length} itens</b></span></div><div><TrendingUp/><span><small>Faturamento possível</small><b>{money(d.expectedRevenue)}</b></span></div></section></>}
-function AlertsView({data,setView,editProduct}:{data:Data;setView:(view:string)=>void;editProduct:(product:Product)=>void}){const today=new Date();today.setHours(12,0,0,0);const dueIn=(value:string)=>Math.ceil((new Date(`${value}T12:00:00`).getTime()-today.getTime())/86400000);const overdue=data.charges.filter(c=>c.status==="overdue"),upcoming=data.charges.filter(c=>c.status!=="overdue"&&dueIn(c.dueDate)<=3),bills=data.supplierBills.filter(b=>b.status!=="paid"&&b.daysUntilDue<=3),low=data.products.filter(p=>p.salePrice>0&&p.stock<=1),pending=data.products.filter(p=>p.salePrice<=0);const total=overdue.length+upcoming.length+bills.length+low.length+pending.length;return <><PageTitle eyebrow="ORGANIZAÇÃO" title="Central de alertas"/><div className="alert-summary"><Bell/><div><strong>{total?`${total} ponto${total===1?"":"s"} para acompanhar`:"Tudo em dia"}</strong><span>{total?"Comece pelos alertas urgentes.":"Nenhuma pendência importante agora."}</span></div></div><section className="alerts-grid"><article className="alert-panel urgent"><header><span><Bell/></span><div><small>URGENTE</small><h2>Clientes em atraso</h2></div><b>{overdue.length}</b></header>{overdue.slice(0,4).map(c=><button key={c.id} onClick={()=>setView("cobrancas")}><div><strong>{c.customerName}</strong><small>Venceu em {dateBR(c.dueDate)} · Parcela {c.installmentNumber}</small></div><b>{money(c.amount)}</b><ChevronRight/></button>)}{!overdue.length&&<p>Nenhum cliente inadimplente.</p>}<footer onClick={()=>setView("cobrancas")}>Abrir cobranças <ChevronRight/></footer></article><article className="alert-panel today"><header><span><CalendarClock/></span><div><small>PRÓXIMOS 3 DIAS</small><h2>Recebimentos e boletos</h2></div><b>{upcoming.length+bills.length}</b></header>{upcoming.slice(0,2).map(c=><button key={`c-${c.id}`} onClick={()=>setView("cobrancas")}><div><strong>Receber de {c.customerName}</strong><small>{dateBR(c.dueDate)}</small></div><b>{money(c.amount)}</b><ChevronRight/></button>)}{bills.slice(0,2).map(b=><button key={`b-${b.id}`} onClick={()=>setView("fornecedores")}><div><strong>{b.supplierName}</strong><small>{b.daysUntilDue<0?"Boleto vencido":b.daysUntilDue===0?"Vence hoje":`Vence em ${b.daysUntilDue} dia(s)`}</small></div><b>{money(b.amount)}</b><ChevronRight/></button>)}{!upcoming.length&&!bills.length&&<p>Nenhum vencimento próximo.</p>}</article><article className="alert-panel stock"><header><span><ShoppingBag/></span><div><small>CATÁLOGO</small><h2>Produtos para revisar</h2></div><b>{low.length+pending.length}</b></header>{low.slice(0,2).map(p=><button key={`s-${p.id}`} onClick={()=>editProduct(p)}><div><strong>{p.name}</strong><small>{p.stock===0?"Sem estoque":"Última unidade"}</small></div><ChevronRight/></button>)}{pending.slice(0,2).map(p=><button key={`p-${p.id}`} onClick={()=>editProduct(p)}><div><strong>{p.name}</strong><small>Pré-cadastro aguardando preço</small></div><ChevronRight/></button>)}{!low.length&&!pending.length&&<p>Estoque e catálogo sem pendências.</p>}<footer onClick={()=>setView("produtos")}>Ver produtos <ChevronRight/></footer></article></section></>}
-function ProductsView({products,search,setSearch,open,edit}:{products:Product[];search:string;setSearch:(v:string)=>void;open:()=>void;edit:(product:Product)=>void}){return <><PageTitle eyebrow="CATÁLOGO" title="Meus produtos" action={<Button onClick={open}><Plus/> Novo produto</Button>}/><div className="search"><Search/><Input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar nome, marca ou código…"/></div><div className="product-grid">{products.map(p=>{const preregistered=p.salePrice<=0;const available=!preregistered&&p.stock>=1;return <article className="product-card" key={p.id}><div className={p.photoUrl?"product-visual has-photo":"product-visual"}>{p.photoUrl?<img src={p.photoUrl} alt={p.name} style={{width:"100%",height:"100%",objectFit:"contain",objectPosition:"center",padding:"8px"}}/>:<ShoppingBag/>}<span>{p.brand}</span></div><div><small>#{p.barcode}</small><div className={`product-status ${available?"active":preregistered?"preregistered":"out-of-stock"}`}>{available?"Disponível":preregistered?"Pré-cadastrado":"Sem estoque"}</div><h3>{p.name}</h3><p><b>{preregistered?"Preço pendente":money(p.salePrice)}</b><span>{p.stock} em estoque</span></p><footer><span>{p.costPrice>0?`Custo ${money(p.costPrice)}`:"Custo pendente"}</span>{!preregistered&&<span className="profit">Lucro {money(p.salePrice-p.costPrice)}</span>}</footer><Button type="button" variant="outline" className="edit-product" onClick={()=>edit(p)}><Pencil/> {preregistered||p.stock<1?"Dar entrada / editar":"Editar produto"}</Button></div></article>})}</div>{!products.length&&<Empty icon={ShoppingBag} text="Cadastre seu primeiro produto"/>}</>}
-function CustomersView({customers,open}:{customers:Customer[];open:()=>void}){return <><PageTitle eyebrow="RELACIONAMENTO" title="Clientes" action={<Button onClick={open}><Plus/> Novo cliente</Button>}/><section className="customer-grid">{customers.map(c=>{const paymentTone=c.paymentStatus==="Em atraso"?"danger":c.paymentStatus==="Atenção"?"warning":c.paymentStatus==="Em dia"?"good":"neutral";return <article className="customer-card" key={c.id}><header><span className="avatar">{c.name.slice(0,2).toUpperCase()}</span><div><b>{c.name}</b><small>{c.phone||"Sem telefone"}</small></div>{c.phone&&<a href={`https://wa.me/55${c.phone.replace(/\D/g,"")}`} target="_blank" rel="noreferrer">WhatsApp</a>}</header><div className="customer-badges"><span className={`loyalty loyalty-${c.loyaltyLevel.toLowerCase()}`}>★ {c.loyaltyLevel}</span><span className={`payment-status ${paymentTone}`}>{c.paymentStatus}</span></div><div className="customer-metrics"><div><small>Total comprado</small><b>{money(c.totalPurchased)}</b></div><div><small>Saldo pendente</small><b>{money(c.pendingBalance)}</b></div><div><small>Compras</small><b>{c.purchaseCount}</b></div></div>{c.overdueCount>0&&<p className="customer-alert">{c.overdueCount} {c.overdueCount===1?"parcela vencida":"parcelas vencidas"}</p>}</article>})}{!customers.length&&<section className="panel"><Empty icon={Users} text="Cadastre sua primeira cliente"/></section>}</section></>}
-function SalesView({data,open,scan}:{data:Data;open:()=>void;scan:()=>void}){return <><PageTitle eyebrow="MOVIMENTO" title="Vendas" action={<div className="page-actions"><Button variant="outline" onClick={open}><Plus/> Manual</Button><Button onClick={scan}><Barcode/> Vender com câmera</Button></div>}/><div className="stats mini"><article className="stat"><small>Total vendido</small><strong>{money(data.dashboard.salesTotal)}</strong></article><article className="stat"><small>Já recebido</small><strong>{money(data.dashboard.received)}</strong></article><article className="stat"><small>A receber</small><strong>{money(data.dashboard.pending)}</strong></article></div><section className="panel"><Empty icon={CircleDollarSign} text={data.dashboard.salesTotal?"Resumo atualizado com suas vendas":"Leia um código para registrar a primeira venda"}/></section></>}
-function ChargesView({charges,pay}:{charges:Charge[];pay:(id:number)=>void}){const [tab,setTab]=useState("todas");const list=charges.filter(c=>tab==="todas"||c.status===tab);return <><PageTitle eyebrow="FINANCEIRO" title="Cobranças"/><Tabs value={tab} onValueChange={setTab}><TabsList><TabsTrigger value="todas">Todas</TabsTrigger><TabsTrigger value="overdue">Atrasadas</TabsTrigger><TabsTrigger value="upcoming">Próximas</TabsTrigger></TabsList></Tabs><section className="panel list-panel">{list.map(c=><div className="charge-full" key={c.id}><ChargeRow c={c}/><div><a className="whatsapp" href={whatsappLink(c)} target="_blank" rel="noreferrer"><Send/> Lembrar no WhatsApp</a><Button variant="outline" onClick={()=>pay(c.id)}><Check/> Recebido</Button></div></div>)}{!list.length&&<Empty icon={Bell} text="Nenhuma cobrança nesta lista"/>}</section></>}
-function ChargeRow({c}:{c:Charge}){return <div className="charge-row"><span className={c.status==="overdue"?"due late":"due"}>{dateBR(c.dueDate)}</span><div><b>{c.customerName}</b><small>Parcela {c.installmentNumber} • {c.status==="overdue"?"Atrasada":"A vencer"}</small></div><strong>{money(c.amount)}</strong></div>}
-function whatsappLink(c:Charge){const phone=`55${c.phone.replace(/\D/g,"")}`;const msg=`Olá, ${c.customerName}! Tudo bem? 😊 Passando para lembrar que sua parcela de ${money(c.amount)} ${c.status==="overdue"?"venceu":"vence"} em ${new Intl.DateTimeFormat("pt-BR").format(new Date(`${c.dueDate}T12:00:00`))}. Se já realizou o pagamento, pode desconsiderar. Obrigada! Walquíria Maia`;return `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`}
-function SupplierBillsView({bills,dashboard,open,pay}:{bills:SupplierBill[];dashboard:Dashboard;open:()=>void;pay:(id:number)=>void}){const [tab,setTab]=useState("pending");const list=bills.filter(b=>tab==="all"||(tab==="pending"&&b.status!=="paid")||(tab==="alert"&&["overdue","today","dueSoon"].includes(b.status))||b.status===tab);async function enableAlerts(){if(typeof Notification!=="undefined")await Notification.requestPermission()}return <><PageTitle eyebrow="CONTAS A PAGAR" title="Boletos de fornecedores" action={<Button onClick={open}><Plus/> Novo boleto</Button>}/><div className="stats mini"><article className="stat"><small>Total pendente</small><strong>{money(dashboard.supplierPendingTotal)}</strong></article><article className="stat"><small>Vencem em até 3 dias</small><strong>{dashboard.supplierDueSoonCount}</strong></article><article className="stat"><small>Vencidos</small><strong>{dashboard.supplierOverdueCount}</strong></article></div><div className="bill-toolbar"><Tabs value={tab} onValueChange={setTab}><TabsList><TabsTrigger value="pending">Pendentes</TabsTrigger><TabsTrigger value="alert">Avisos</TabsTrigger><TabsTrigger value="paid">Pagos</TabsTrigger><TabsTrigger value="all">Todos</TabsTrigger></TabsList></Tabs>{typeof Notification!=="undefined"&&Notification.permission!=="granted"&&<Button variant="outline" onClick={enableAlerts}><Bell/> Ativar avisos</Button>}</div><section className="panel list-panel">{list.map(b=><div className="supplier-bill" key={b.id}><span className={`due bill-${b.status}`}>{dateBR(b.dueDate)}</span><div><b>{b.supplierName}</b><small>{b.description||"Boleto de fornecedor"}</small><em>{b.status==="overdue"?"Vencido":b.status==="today"?"Vence hoje":b.status==="dueSoon"?`Vence em ${b.daysUntilDue} dia(s)`:b.status==="paid"?"Pago":"A vencer"}</em>{b.barcodeLine&&<button type="button" className="copy-code" onClick={()=>navigator.clipboard.writeText(b.barcodeLine)}>Copiar código do boleto</button>}</div><strong>{money(b.amount)}</strong>{b.status!=="paid"&&<Button variant="outline" onClick={()=>pay(b.id)}><Check/> Marcar pago</Button>}</div>)}{!list.length&&<Empty icon={ReceiptText} text="Nenhum boleto nesta lista"/>}</section></>}
-function FinanceView({api,notify}:{api:(action:string,payload?:Record<string,unknown>)=>Promise<any>;notify:(message:string)=>void}){
-  const [report,setReport]=useState<FinanceReport|null>(null),[loading,setLoading]=useState(true),[showForm,setShowForm]=useState(false),[saving,setSaving]=useState(false);
-  async function refresh(){setLoading(true);try{setReport(await api("finance_report"))}catch(e){notify(e instanceof Error?e.message:"Não foi possível carregar o caixa.")}finally{setLoading(false)}}
-  useEffect(()=>{void refresh()},[]);
-  async function saveEntry(e:FormEvent<HTMLFormElement>){e.preventDefault();setSaving(true);try{const values=Object.fromEntries(new FormData(e.currentTarget));await api("create_cash_entry",values);notify("Lançamento salvo no caixa.");setShowForm(false);await refresh()}catch(err){notify(err instanceof Error?err.message:"Não foi possível salvar.")}finally{setSaving(false)}}
-  const summary=report?.summary||{income:0,expenses:0,balance:0,sales:0,outstanding:0,costOfGoods:0,estimatedProfit:0};
-  return <><PageTitle eyebrow="GESTÃO FINANCEIRA" title="Caixa da loja" action={<Button onClick={()=>setShowForm(v=>!v)}><Plus/> {showForm?"Fechar":"Novo lançamento"}</Button>}/>
-    <div className="stats finance-stats"><article className="stat primary"><small>Vendas do mês</small><strong>{money(summary.sales)}</strong><span>total vendido no período</span></article><article className="stat"><small>Entradas recebidas</small><strong>{money(summary.income)}</strong><span>à vista e parcelas pagas</span></article><article className="stat"><small>A receber</small><strong>{money(summary.outstanding)}</strong><span>parcelas ainda pendentes</span></article><article className="stat"><small>Despesas pagas</small><strong>{money(summary.expenses)}</strong><span>boletos e lançamentos</span></article><article className="stat"><small>Saldo do caixa</small><strong>{money(summary.balance)}</strong><span>recebimentos menos pagamentos</span></article><article className="stat"><small>Lucro estimado</small><strong>{money(summary.estimatedProfit)}</strong><span>vendas menos custo e despesas manuais</span></article></div>
-    {showForm&&<section className="panel finance-form"><div className="panel-head"><div><small>NOVO LANÇAMENTO</small><h2>Registrar no caixa</h2></div></div><form onSubmit={saveEntry} className="form">
-      <div className="field"><Label>Tipo</Label><Select name="kind" defaultValue="expense"><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="income">Entrada</SelectItem><SelectItem value="expense">Despesa</SelectItem></SelectContent></Select></div>
-      <div className="field"><Label>Categoria</Label><Input name="category" placeholder="Ex.: transporte, embalagem" required/></div>
-      <div className="field full"><Label>Descrição</Label><Input name="description" placeholder="O que entrou ou foi pago?" required/></div>
-      <div className="field"><Label>Valor</Label><Input name="amount" type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="0,00" required/></div>
-      <div className="field"><Label>Forma</Label><Select name="paymentMethod" defaultValue="pix"><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="pix">PIX</SelectItem><SelectItem value="cash">Dinheiro</SelectItem><SelectItem value="card">Cartão</SelectItem><SelectItem value="transfer">Transferência</SelectItem><SelectItem value="other">Outro</SelectItem></SelectContent></Select></div>
-      <div className="field"><Label>Data</Label><Input name="occurredAt" type="date" defaultValue={new Date().toISOString().slice(0,10)} required/></div>
-      <div className="dialog-actions full"><Button type="button" variant="outline" onClick={()=>setShowForm(false)}>Cancelar</Button><Button type="submit" disabled={saving}>{saving?<Loader2 className="spin"/>:<Check/>} Salvar no caixa</Button></div>
-    </form></section>}
-    <section className="panel finance-list"><div className="panel-head"><div><small>MOVIMENTAÇÃO</small><h2>Lançamentos recentes</h2></div><Button variant="outline" onClick={refresh} disabled={loading}>{loading?<Loader2 className="spin"/>:"Atualizar"}</Button></div>
-      {loading&&!report?<div className="center"><Loader2 className="spin"/> Carregando caixa…</div>:report?.entries.map(entry=>{const pending=entry.kind==="pending";return <article className="cash-entry" key={entry.id}><span className={entry.kind==="income"?"cash-in":pending?"cash-pending":"cash-out"}>{entry.kind==="income"?"+":pending?"…":"−"}</span><div><b>{entry.description}</b><small>{entry.category} · {pending?"vence em ":""}{new Date(entry.occurredAt).toLocaleDateString("pt-BR")}</small></div><strong className={entry.kind==="income"?"positive":pending?"pending-value":"negative"}>{entry.kind==="income"?"+ ":entry.kind==="expense"?"− ":""}{money(entry.amount)}</strong></article>})}{!loading&&!report?.entries.length&&<Empty icon={Wallet} text="Nenhuma movimentação neste período"/>}
-    </section>
-    <section className="panel receipt-history"><div className="panel-head"><div><small>COMPROVANTES</small><h2>Vendas do período</h2></div><span>{report?.receipts?.length||0} venda(s)</span></div>
-      <div className="receipt-history-list">{report?.receipts?.map(receipt=>{const phone=receipt.customerPhone.replace(/\D/g,""),target=phone?`55${phone.replace(/^55/,"")}`:"";return <article className="receipt-history-card" key={receipt.receiptCode}><span className="receipt-history-icon"><ReceiptText/></span><div className="receipt-history-info"><b>{receipt.customerName||"Cliente avulso"}</b><small>{new Date(receipt.soldAt).toLocaleString("pt-BR")} · {receipt.items.length} item(ns)</small><span>{receipt.items.map(item=>`${item.quantity}x ${item.name}`).join(", ")}</span></div><strong>{money(receipt.total)}</strong><div className="receipt-history-actions"><Button variant="outline" onClick={()=>{if(!openFinanceReceipt(receipt))notify("Permita a abertura de janelas para gerar o PDF.")}}><ReceiptText/> PDF</Button><a className="receipt-resend" href={`https://wa.me/${target}?text=${encodeURIComponent(financeReceiptText(receipt))}`} target="_blank" rel="noreferrer"><Share/> Reenviar</a></div></article>})}</div>
-      {!loading&&!report?.receipts?.length&&<Empty icon={ReceiptText} text="Nenhum comprovante neste período"/>}
-    </section></>
+function AlertsView({
+  data,
+  setView,
+  editProduct,
+}: {
+  data: Data;
+  setView: (view: string) => void;
+  editProduct: (product: Product) => void;
+}) {
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  const dueIn = (value: string) =>
+    Math.ceil(
+      (new Date(`${value}T12:00:00`).getTime() - today.getTime()) / 86400000,
+    );
+  const overdue = data.charges.filter((c) => c.status === "overdue"),
+    upcoming = data.charges.filter(
+      (c) => c.status !== "overdue" && dueIn(c.dueDate) <= 3,
+    ),
+    bills = data.supplierBills.filter(
+      (b) => b.status !== "paid" && b.daysUntilDue <= 3,
+    ),
+    low = data.products.filter((p) => p.salePrice > 0 && p.stock <= 1),
+    pending = data.products.filter((p) => p.salePrice <= 0);
+  const total =
+    overdue.length +
+    upcoming.length +
+    bills.length +
+    low.length +
+    pending.length;
+  return (
+    <>
+      <PageTitle eyebrow="ORGANIZAÇÃO" title="Central de alertas" />
+      <div className="alert-summary">
+        <Bell />
+        <div>
+          <strong>
+            {total
+              ? `${total} ponto${total === 1 ? "" : "s"} para acompanhar`
+              : "Tudo em dia"}
+          </strong>
+          <span>
+            {total
+              ? "Comece pelos alertas urgentes."
+              : "Nenhuma pendência importante agora."}
+          </span>
+        </div>
+      </div>
+      <section className="alerts-grid">
+        <article className="alert-panel urgent">
+          <header>
+            <span>
+              <Bell />
+            </span>
+            <div>
+              <small>URGENTE</small>
+              <h2>Clientes em atraso</h2>
+            </div>
+            <b>{overdue.length}</b>
+          </header>
+          {overdue.slice(0, 4).map((c) => (
+            <button key={c.id} onClick={() => setView("cobrancas")}>
+              <div>
+                <strong>{c.customerName}</strong>
+                <small>
+                  Venceu em {dateBR(c.dueDate)} · Parcela {c.installmentNumber}
+                </small>
+              </div>
+              <b>{money(c.amount)}</b>
+              <ChevronRight />
+            </button>
+          ))}
+          {!overdue.length && <p>Nenhum cliente inadimplente.</p>}
+          <footer onClick={() => setView("cobrancas")}>
+            Abrir cobranças <ChevronRight />
+          </footer>
+        </article>
+        <article className="alert-panel today">
+          <header>
+            <span>
+              <CalendarClock />
+            </span>
+            <div>
+              <small>PRÓXIMOS 3 DIAS</small>
+              <h2>Recebimentos e boletos</h2>
+            </div>
+            <b>{upcoming.length + bills.length}</b>
+          </header>
+          {upcoming.slice(0, 2).map((c) => (
+            <button key={`c-${c.id}`} onClick={() => setView("cobrancas")}>
+              <div>
+                <strong>Receber de {c.customerName}</strong>
+                <small>{dateBR(c.dueDate)}</small>
+              </div>
+              <b>{money(c.amount)}</b>
+              <ChevronRight />
+            </button>
+          ))}
+          {bills.slice(0, 2).map((b) => (
+            <button key={`b-${b.id}`} onClick={() => setView("fornecedores")}>
+              <div>
+                <strong>{b.supplierName}</strong>
+                <small>
+                  {b.daysUntilDue < 0
+                    ? "Boleto vencido"
+                    : b.daysUntilDue === 0
+                      ? "Vence hoje"
+                      : `Vence em ${b.daysUntilDue} dia(s)`}
+                </small>
+              </div>
+              <b>{money(b.amount)}</b>
+              <ChevronRight />
+            </button>
+          ))}
+          {!upcoming.length && !bills.length && (
+            <p>Nenhum vencimento próximo.</p>
+          )}
+        </article>
+        <article className="alert-panel stock">
+          <header>
+            <span>
+              <ShoppingBag />
+            </span>
+            <div>
+              <small>CATÁLOGO</small>
+              <h2>Produtos para revisar</h2>
+            </div>
+            <b>{low.length + pending.length}</b>
+          </header>
+          {low.slice(0, 2).map((p) => (
+            <button key={`s-${p.id}`} onClick={() => editProduct(p)}>
+              <div>
+                <strong>{p.name}</strong>
+                <small>
+                  {p.stock === 0 ? "Sem estoque" : "Última unidade"}
+                </small>
+              </div>
+              <ChevronRight />
+            </button>
+          ))}
+          {pending.slice(0, 2).map((p) => (
+            <button key={`p-${p.id}`} onClick={() => editProduct(p)}>
+              <div>
+                <strong>{p.name}</strong>
+                <small>Pré-cadastro aguardando preço</small>
+              </div>
+              <ChevronRight />
+            </button>
+          ))}
+          {!low.length && !pending.length && (
+            <p>Estoque e catálogo sem pendências.</p>
+          )}
+          <footer onClick={() => setView("produtos")}>
+            Ver produtos <ChevronRight />
+          </footer>
+        </article>
+      </section>
+    </>
+  );
 }
-
-function Empty({icon:Icon,text}:{icon:any;text:string}){return <div className="empty"><Icon/><b>{text}</b><span>Quando houver informações, elas aparecerão aqui.</span></div>}
-
-function ProductDialog({open,close,save,saving,scan,lookup,onExisting,product}:{open:boolean;close:()=>void;save:any;saving:boolean;scan:()=>void;lookup:(barcode:string)=>Promise<any>;onExisting:(id:number)=>void;product:Product|null}){
-  const [code,setCode]=useState(""),[name,setName]=useState(""),[brand,setBrand]=useState("Rommanel"),[photo,setPhoto]=useState<File|null>(null),[preview,setPreview]=useState(""),[catalogImage,setCatalogImage]=useState(""),[removePhoto,setRemovePhoto]=useState(false),[looking,setLooking]=useState(false),[lookupNote,setLookupNote]=useState("");
-  const cameraInput=useRef<HTMLInputElement>(null),galleryInput=useRef<HTMLInputElement>(null);
-  async function findBarcode(value=code){const clean=value.trim();if(clean.length<4)return;setLooking(true);setLookupNote("");try{const result=await lookup(clean);if(!result.found){setLookupNote("Código novo. Complete os dados e ele será incluído no catálogo.");return}const found=result.product;if(result.registered&&Number.isInteger(Number(found.id))){onExisting(Number(found.id));return}setName(found.name||"");setBrand(found.brand||"Outros");if(found.imageUrl&&!product?.photoUrl){setPreview(found.imageUrl);setCatalogImage(found.imageUrl)}setLookupNote(`Produto encontrado no catálogo: ${found.source||"WM Vendas"}.`)}catch(e){setLookupNote(e instanceof Error?e.message:"Não foi possível consultar o catálogo.")}finally{setLooking(false)}}
-  useEffect(()=>{if(open){const scanned=sessionStorage.getItem("wm-scanned-code");const nextCode=scanned||product?.barcode||"";setCode(nextCode);setName(product?.name||"");setBrand(product?.brand||"Rommanel");if(scanned)sessionStorage.removeItem("wm-scanned-code");setPhoto(null);setPreview(product?.photoUrl||"");setCatalogImage("");setRemovePhoto(false);setLookupNote("");if(scanned)void findBarcode(scanned)}},[open,product]);
-  function choose(file?:File){if(!file)return;setPhoto(file);setCatalogImage("");setRemovePhoto(false);const url=URL.createObjectURL(file);setPreview(old=>{if(old.startsWith("blob:"))URL.revokeObjectURL(old);return url})}
-  function remove(){if(preview.startsWith("blob:"))URL.revokeObjectURL(preview);setPreview("");setCatalogImage("");setPhoto(null);setRemovePhoto(Boolean(product?.photoUrl))}
-  async function send(e:FormEvent<HTMLFormElement>){e.preventDefault();const values:Record<string,unknown>=Object.fromEntries(new FormData(e.currentTarget));values.catalogImageUrl=catalogImage;if(photo)values.photo=await prepareProductPhoto(photo);if(product){values.id=product.id;values.removePhoto=removePhoto}await save(product?"update_product":"create_product",values)}
-  return <Dialog open={open} onOpenChange={v=>!v&&close()}><DialogContent className="product-dialog"><DialogHeader><DialogTitle>{product?"Editar produto":"Novo produto"}</DialogTitle><DialogDescription>{product?"Complete ou altere os dados. Produtos sem preço ficam somente no catálogo do vendedor.":"Cadastre agora o código, nome e imagem. Preços e estoque podem ser preenchidos quando a mercadoria chegar."}</DialogDescription></DialogHeader><form key={product?.id||"new"} onSubmit={send} className="form"><div className="field full"><Label>Foto do produto (opcional)</Label><div className="photo-picker">{preview?<div className="photo-preview"><img src={preview} alt="Prévia do produto"/><button type="button" aria-label="Remover foto" onClick={remove}><X/></button></div>:<div className="photo-placeholder"><ImagePlus/><span>A foto aparecerá no estoque</span></div>}<div className="photo-actions"><Button type="button" variant="outline" onClick={()=>cameraInput.current?.click()}><Camera/> Tirar foto</Button><Button type="button" variant="outline" onClick={()=>galleryInput.current?.click()}><ImagePlus/> Galeria</Button></div><input ref={cameraInput} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={e=>choose(e.target.files?.[0])}/><input ref={galleryInput} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>choose(e.target.files?.[0])}/></div></div><div className="field full"><Label>Código de barras ou referência</Label><div className="barcode-lookup"><Input name="barcode" value={code} onChange={e=>setCode(e.target.value)} onBlur={()=>void findBarcode()} required placeholder="Ex.: 5251210006"/><Button type="button" variant="outline" onClick={scan}><Camera/> Ler</Button><Button type="button" variant="outline" disabled={looking||code.trim().length<4} onClick={()=>void findBarcode()}>{looking?<Loader2 className="spin"/>:<Search/>} Buscar</Button></div>{lookupNote&&<small className={lookupNote.startsWith("Produto encontrado")?"lookup-found":"lookup-note"}>{lookupNote}</small>}</div><div className="field full"><Label>Nome do produto</Label><Input name="name" value={name} onChange={e=>setName(e.target.value)} required placeholder="Ex.: Brinco infantil com cristal"/></div><div className="field full"><Label>Marca</Label><Select name="brand" value={brand} onValueChange={setBrand}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="Rommanel">Rommanel</SelectItem><SelectItem value="Natura">Natura</SelectItem><SelectItem value="O Boticário">O Boticário</SelectItem><SelectItem value="Eudora">Eudora</SelectItem><SelectItem value="Avon">Avon</SelectItem><SelectItem value="Amaggod">Amaggod</SelectItem><SelectItem value="Jequiti">Jequiti</SelectItem><SelectItem value="Vestuário">Vestuário</SelectItem><SelectItem value="Acessórios">Acessórios</SelectItem><SelectItem value="Cosméticos">Cosméticos</SelectItem><SelectItem value="Perfumaria">Perfumaria</SelectItem><SelectItem value="Outros">Outros</SelectItem></SelectContent></Select></div><div className="field"><Label>Preço de custo (opcional)</Label><Input name="costPrice" type="number" inputMode="decimal" step="0.01" min="0" placeholder="Preencher quando comprar" defaultValue={product?.costPrice||""}/></div><div className="field"><Label>Preço de venda (opcional)</Label><Input name="salePrice" type="number" inputMode="decimal" step="0.01" min="0" placeholder="Definir depois" defaultValue={product?.salePrice||""}/></div><div className="field full"><Label>Quantidade em estoque (opcional)</Label><Input name="stock" type="number" inputMode="numeric" min="0" placeholder="0" defaultValue={product?.stock||""}/><small className="field-help">Sem preço ou estoque, o produto fica pré-cadastrado e não aparece na loja.</small></div><DialogActions close={close} saving={saving}/></form></DialogContent></Dialog>}
-function CustomerDialog({open,close,save,saving}:{open:boolean;close:()=>void;save:any;saving:boolean}){function send(e:FormEvent<HTMLFormElement>){e.preventDefault();save("create_customer",Object.fromEntries(new FormData(e.currentTarget)))}return <Dialog open={open} onOpenChange={v=>!v&&close()}><DialogContent><DialogHeader><DialogTitle>Nova cliente</DialogTitle><DialogDescription>Guarde o contato para vendas e lembretes de cobrança.</DialogDescription></DialogHeader><form onSubmit={send} className="form"><div className="field full"><Label>Nome completo</Label><Input name="name" required autoFocus/></div><div className="field full"><Label>WhatsApp</Label><Input name="phone" inputMode="tel" placeholder="(11) 99999-9999"/></div><DialogActions close={close} saving={saving}/></form></DialogContent></Dialog>}
-function SupplierBillDialog({open,close,save,saving}:{open:boolean;close:()=>void;save:any;saving:boolean}){function send(e:FormEvent<HTMLFormElement>){e.preventDefault();save("create_supplier_bill",Object.fromEntries(new FormData(e.currentTarget)))}return <Dialog open={open} onOpenChange={v=>!v&&close()}><DialogContent><DialogHeader><DialogTitle>Novo boleto de fornecedor</DialogTitle><DialogDescription>Cadastre o vencimento para receber o aviso com 3 dias de antecedência.</DialogDescription></DialogHeader><form onSubmit={send} className="form"><div className="field full"><Label>Fornecedor</Label><Input name="supplierName" required autoFocus placeholder="Ex.: Rommanel"/></div><div className="field full"><Label>Descrição</Label><Input name="description" placeholder="Ex.: Pedido de setembro"/></div><div className="field"><Label>Valor</Label><Input name="amount" type="number" step="0.01" min="0.01" required/></div><div className="field"><Label>Data de vencimento</Label><Input name="dueDate" type="date" required/></div><div className="field full"><Label>Linha digitável ou código (opcional)</Label><Input name="barcodeLine" inputMode="numeric" placeholder="Cole ou digite o código do boleto"/></div><DialogActions close={close} saving={saving}/></form></DialogContent></Dialog>}
-function buildInstallments(total:number,count:number,firstDate:string){if(!firstDate||count<1)return [];const source=new Date(`${firstDate}T12:00:00`),day=source.getDate();return Array.from({length:count},(_,index)=>{const base=new Date(source.getFullYear(),source.getMonth()+index,1,12);const lastDay=new Date(base.getFullYear(),base.getMonth()+1,0).getDate();base.setDate(Math.min(day,lastDay));const regular=Math.round(total/count*100)/100;const amount=index===count-1?Math.round((total-regular*(count-1))*100)/100:regular;return {number:index+1,dueDate:`${base.getFullYear()}-${String(base.getMonth()+1).padStart(2,"0")}-${String(base.getDate()).padStart(2,"0")}`,amount}})}
-function receiptHtml(value:unknown){return String(value??"").replace(/[&<>"]/g,char=>char==="&"?"&amp;":char==="<"?"&lt;":char===">"?"&gt;":"&quot;")}
-function paymentLabel(value:string){return ({pix:"PIX",cash:"Dinheiro",card:"Cartão",credit:"Cartão de crédito",debit:"Cartão de débito",parcelado:"Parcelado",fiado:"A prazo"} as Record<string,string>)[value]||value||"Não informado"}
-function financeReceiptText(receipt:SaleReceipt){const lines=receipt.items.map(item=>`${item.quantity}x ${item.name} — ${money(item.lineTotal)}`).join("\n"),dates=receipt.installmentDates.map(item=>`${item.number}ª parcela: ${money(item.amount)} - ${new Date(`${item.dueDate}T12:00:00`).toLocaleDateString("pt-BR")}`).join("\n");return `*WM Vendas — Comprovante*\n${new Date(receipt.soldAt).toLocaleString("pt-BR")}\nCliente: ${receipt.customerName||"Cliente avulso"}\nWhatsApp: ${receipt.customerPhone||"Não informado"}\n\n${lines}\n\nSubtotal: ${money(receipt.subtotal)}\nDesconto: ${money(receipt.discount)}\n*Total: ${money(receipt.total)}*\nPagamento: ${paymentLabel(receipt.paymentMethod)}${receipt.installments>1?` em ${receipt.installments}x`:""}${dates?`\n\n*Vencimentos*\n${dates}`:""}\n\nObrigada pela preferência!\nWalquíria Maia`}
-function openFinanceReceipt(receipt:SaleReceipt){const popup=window.open("","_blank");if(!popup)return false;const rows=receipt.items.map(item=>`<tr><td>${item.quantity}x ${receiptHtml(item.name)}</td><td>${money(item.unitPrice)}</td><td>${money(item.lineTotal)}</td></tr>`).join(""),schedule=receipt.installmentDates.map(item=>`<tr><td>${item.number}ª parcela</td><td>${new Date(`${item.dueDate}T12:00:00`).toLocaleDateString("pt-BR")}</td><td>${money(item.amount)}</td></tr>`).join("");popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Comprovante ${receiptHtml(receipt.receiptCode)}</title><style>@page{size:A4;margin:12mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{margin:0;color:#35242b;font:14px Arial,sans-serif}.paper{max-width:760px;margin:auto;border:1px solid #eadbe1;border-radius:18px;overflow:hidden}.head{padding:24px;background:linear-gradient(135deg,#7b2448,#9e5572);color:#fff}.head h1{margin:0;font:28px Georgia,serif}.head p{margin:5px 0 0}.body{padding:24px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:22px}.meta div{padding:11px;border-radius:10px;background:#fbf4f7}.meta b,.meta span{display:block}.meta span{margin-top:3px;color:#715c65}table{width:100%;border-collapse:collapse;margin:12px 0 22px}th,td{padding:10px 8px;border-bottom:1px solid #eadbe1;text-align:left}th:last-child,td:last-child{text-align:right}.totals{margin-left:auto;width:min(100%,330px)}.totals div{display:flex;justify-content:space-between;padding:6px}.grand{margin-top:6px!important;padding:12px!important;border-radius:10px;background:#f8eaf0;color:#7b2448;font-size:18px}.schedule{margin-top:24px}.foot{padding:18px 24px;background:#fff8fa;text-align:center;color:#715c65;font-size:12px}@media(max-width:560px){.meta{grid-template-columns:1fr}}@media print{.head,.meta div,.grand,.foot{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}</style></head><body><main class="paper"><header class="head"><h1>WM Vendas</h1><p>Walquíria Maia - Comprovante de venda</p></header><section class="body"><div class="meta"><div><b>Cliente</b><span>${receiptHtml(receipt.customerName||"Cliente avulso")}</span></div><div><b>WhatsApp</b><span>${receiptHtml(receipt.customerPhone||"Não informado")}</span></div><div><b>Data</b><span>${new Date(receipt.soldAt).toLocaleString("pt-BR")}</span></div><div><b>Pagamento</b><span>${receiptHtml(paymentLabel(receipt.paymentMethod))}${receipt.installments>1?` - ${receipt.installments} parcelas`:""}</span></div></div><h2>Produtos</h2><table><thead><tr><th>Produto</th><th>Preço unitário</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table><div class="totals"><div><span>Subtotal</span><b>${money(receipt.subtotal)}</b></div><div><span>Desconto</span><b>${money(receipt.discount)}</b></div><div class="grand"><span>Total</span><b>${money(receipt.total)}</b></div></div>${schedule?`<div class="schedule"><h2>Parcelas e vencimentos</h2><table><thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor</th></tr></thead><tbody>${schedule}</tbody></table></div>`:""}</section><footer class="foot">Estoque, vendas e cobranças na palma da mão.<br>Documento gerado pelo WM Vendas.</footer></main><script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`);popup.document.close();return true}
-function SaleDialog({open,close,save,saving,data,initialProductId}:{open:boolean;close:()=>void;save:any;saving:boolean;data:Data;initialProductId:string}){
-  const [productId,setProductId]=useState(""),[cart,setCart]=useState<{productId:number;quantity:number}[]>([]),[payment,setPayment]=useState("pix"),[receipt,setReceipt]=useState<any>(null);
-  const next=new Date();next.setDate(next.getDate()+30);
-  useEffect(()=>{if(open){setProductId(initialProductId);setCart(initialProductId?[{productId:Number(initialProductId),quantity:1}]:[]);setPayment("pix");setReceipt(null)}},[open,initialProductId]);
-  const selected=data.products.find(p=>String(p.id)===productId);
-  const subtotal=cart.reduce((sum,item)=>{const p=data.products.find(x=>x.id===item.productId);return sum+(p?.salePrice||0)*item.quantity},0);
-  function add(){if(!selected)return;setCart(items=>{const found=items.find(i=>i.productId===selected.id);if(found)return items.map(i=>i.productId===selected.id?{...i,quantity:Math.min(selected.stock,i.quantity+1)}:i);return [...items,{productId:selected.id,quantity:1}]});setProductId("")}
-  function quantity(id:number,delta:number){const product=data.products.find(p=>p.id===id);setCart(items=>items.map(i=>i.productId===id?{...i,quantity:Math.max(1,Math.min(product?.stock||1,i.quantity+delta))}:i))}
-  async function send(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!cart.length)return;const values=Object.fromEntries(new FormData(e.currentTarget));const operationId=crypto.randomUUID(),installments=payment==="parcelado"?Number(values.installments||1):1,dueDate=String(values.dueDate||"");const j=await save("create_express_sale",{...values,items:cart,operationId});const customer=data.customers.find(c=>String(c.id)===String(values.customerId||""));if(j.queued){const items=cart.map(item=>{const p=data.products.find(x=>x.id===item.productId)!;return {name:p.name,quantity:item.quantity,unitPrice:p.salePrice,lineTotal:p.salePrice*item.quantity}}),total=subtotal-Number(values.discount||0);setReceipt({offline:true,receiptCode:operationId,customerName:customer?.name||"Cliente avulso",customerPhone:customer?.phone||"",items,subtotal,total,discount:Number(values.discount||0),paymentMethod:payment,installments,installmentDates:payment==="parcelado"?buildInstallments(total,installments,dueDate):[],soldAt:new Date().toISOString()})}else setReceipt({...j.receipt,installmentDates:payment==="parcelado"?buildInstallments(Number(j.receipt.total),installments,dueDate):[]})}
-  function receiptText(){if(!receipt)return "";const lines=(receipt.items||[]).map((i:any)=>`${i.quantity}x ${i.name} — ${money(i.lineTotal)}`).join("\n"),dates=(receipt.installmentDates||[]).map((item:any)=>`${item.number}ª parcela: ${money(item.amount)} - ${new Date(`${item.dueDate}T12:00:00`).toLocaleDateString("pt-BR")}`).join("\n");return `*WM Vendas — Comprovante*\n${new Date(receipt.soldAt).toLocaleString("pt-BR")}\nCliente: ${receipt.customerName||"Cliente avulso"}\nWhatsApp: ${receipt.customerPhone||"Não informado"}\n\n${lines}\n\nSubtotal: ${money(receipt.subtotal)}\nDesconto: ${money(receipt.discount)}\n*Total: ${money(receipt.total)}*\nPagamento: ${receipt.paymentMethod}${receipt.paymentMethod==="parcelado"?` em ${receipt.installments}x`:""}${dates?`\n\n*Vencimentos*\n${dates}`:""}\n\nObrigada pela preferência!\nWalquíria Maia`}
-  function printReceipt(){if(!receipt)return;const popup=window.open("","_blank");if(!popup)return;const itemRows=(receipt.items||[]).map((item:any)=>`<tr><td>${item.quantity}x ${receiptHtml(item.name)}</td><td>${money(item.unitPrice)}</td><td>${money(item.lineTotal)}</td></tr>`).join(""),installmentRows=(receipt.installmentDates||[]).map((item:any)=>`<tr><td>${item.number}ª parcela</td><td>${new Date(`${item.dueDate}T12:00:00`).toLocaleDateString("pt-BR")}</td><td>${money(item.amount)}</td></tr>`).join("");popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Comprovante WM Vendas</title><style>@page{size:A4;margin:12mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}html,body{background:#fff!important}body{margin:0;color:#35242b;font:14px Arial,sans-serif}.paper{max-width:760px;margin:auto;border:1px solid #eadbe1;border-radius:18px;overflow:hidden}.head{padding:24px;background:linear-gradient(135deg,#7b2448,#9e5572);color:#fff}.head h1{margin:0;font:28px Georgia,serif}.head p{margin:5px 0 0}.body{padding:24px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:22px}.meta div{padding:11px;border-radius:10px;background:#fbf4f7}.meta b,.meta span{display:block}.meta span{margin-top:3px;color:#715c65}table{width:100%;border-collapse:collapse;margin:12px 0 22px}th,td{padding:10px 8px;border-bottom:1px solid #eadbe1;text-align:left}th:last-child,td:last-child{text-align:right}.totals{margin-left:auto;width:min(100%,330px)}.totals div{display:flex;justify-content:space-between;padding:6px}.totals .grand{margin-top:6px;padding:12px;border-radius:10px;background:#f8eaf0;color:#7b2448;font-size:18px;font-weight:bold}.schedule{margin-top:24px}.foot{padding:18px 24px;background:#fff8fa;text-align:center;color:#715c65;font-size:12px}@media print{html,body{width:210mm;min-height:297mm}.paper{border:1px solid #eadbe1;box-shadow:none}.head,.meta div,.totals .grand,.foot{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}</style></head><body><main class="paper"><header class="head"><h1>WM Vendas</h1><p>Walquíria Maia - Comprovante de venda</p></header><section class="body"><div class="meta"><div><b>Cliente</b><span>${receiptHtml(receipt.customerName||"Cliente avulso")}</span></div><div><b>WhatsApp</b><span>${receiptHtml(receipt.customerPhone||"Não informado")}</span></div><div><b>Data</b><span>${new Date(receipt.soldAt).toLocaleString("pt-BR")}</span></div><div><b>Pagamento</b><span>${receiptHtml(receipt.paymentMethod)}${receipt.paymentMethod==="parcelado"?` - ${receipt.installments} parcelas`:""}</span></div></div><h2>Produtos</h2><table><thead><tr><th>Produto</th><th>Preço unitário</th><th>Total</th></tr></thead><tbody>${itemRows}</tbody></table><div class="totals"><div><span>Subtotal</span><b>${money(receipt.subtotal)}</b></div><div><span>Desconto</span><b>${money(receipt.discount)}</b></div><div class="grand"><span>Total</span><b>${money(receipt.total)}</b></div></div>${installmentRows?`<div class="schedule"><h2>Parcelas e vencimentos</h2><table><thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor</th></tr></thead><tbody>${installmentRows}</tbody></table></div>`:""}</section><footer class="foot">Estoque, vendas e cobranças na palma da mão.<br>Documento gerado pelo WM Vendas.</footer></main><script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`);popup.document.close()}
-  if(receipt)return <Dialog open={open} onOpenChange={v=>!v&&close()}><DialogContent className="express-sale-dialog"><div className="sale-success"><span><Check/></span><small>{receipt.offline?"SALVA NO CELULAR":"VENDA CONCLUÍDA"}</small><h2>{money(receipt.total)}</h2><p>{receipt.offline?"Aguardando internet para confirmar e baixar o estoque.":"Estoque atualizado e venda registrada com segurança."}</p><div className="receipt-customer"><b>{receipt.customerName||"Cliente avulso"}</b><small>{receipt.customerPhone||"WhatsApp não informado"}</small></div><div className="receipt-lines">{(receipt.items||[]).map((i:any,index:number)=><div key={index}><span>{i.quantity}x {i.name}</span><b>{money(i.lineTotal)}</b></div>)}</div>{receipt.installmentDates?.length>0&&<div className="receipt-installments"><b>Parcelas e vencimentos</b>{receipt.installmentDates.map((item:any)=><div key={item.number}><span>{item.number}ª - {new Date(`${item.dueDate}T12:00:00`).toLocaleDateString("pt-BR")}</span><strong>{money(item.amount)}</strong></div>)}</div>}<Button className="receipt-pdf" onClick={printReceipt}><ReceiptText/> Gerar PDF / Imprimir</Button>{!receipt.offline&&<a className="receipt-whatsapp" href={`https://wa.me/?text=${encodeURIComponent(receiptText())}`} target="_blank" rel="noreferrer"><Share/> Enviar comprovante</a>}<Button variant="outline" onClick={close}>Fechar</Button></div></DialogContent></Dialog>;
-  return <Dialog open={open} onOpenChange={v=>!v&&close()}><DialogContent className="express-sale-dialog"><DialogHeader><DialogTitle>Venda Expressa</DialogTitle><DialogDescription>Leia o primeiro código ou monte a cesta com vários produtos.</DialogDescription></DialogHeader>{!data.products.length?<div className="modal-empty"><ShoppingBag/>Cadastre um produto antes da primeira venda.<Button onClick={close}>Entendi</Button></div>:<form onSubmit={send} className="express-sale-form">
-    <div className="express-picker"><Select value={productId} onValueChange={setProductId}><SelectTrigger><SelectValue placeholder="Escolha outro produto"/></SelectTrigger><SelectContent>{data.products.filter(p=>p.stock>0&&p.salePrice>0).map(p=><SelectItem key={p.id} value={String(p.id)}>{p.name} — {money(p.salePrice)}</SelectItem>)}</SelectContent></Select><Button type="button" onClick={add} disabled={!selected}><Plus/> Adicionar</Button></div>
-    <section className="express-cart">{cart.map(item=>{const p=data.products.find(x=>x.id===item.productId);if(!p)return null;return <article key={item.productId}>{p.photoUrl?<img src={p.photoUrl} alt=""/>:<span className="express-thumb"><ShoppingBag/></span>}<div><b>{p.name}</b><small>{money(p.salePrice)} · {p.stock} disponíveis</small></div><div className="express-qty"><button type="button" onClick={()=>quantity(p.id,-1)}>−</button><strong>{item.quantity}</strong><button type="button" onClick={()=>quantity(p.id,1)}>+</button></div><strong>{money(p.salePrice*item.quantity)}</strong><button type="button" className="express-remove" aria-label="Remover produto" onClick={()=>setCart(items=>items.filter(i=>i.productId!==p.id))}><X/></button></article>})}{!cart.length&&<div className="express-empty"><ShoppingBag/><span>Adicione o primeiro produto à venda</span></div>}</section>
-    <div className="express-total"><span>Subtotal</span><strong>{money(subtotal)}</strong></div>
-    <div className="form">
-      <div className="field full"><Label>Cliente</Label><Select name="customerId"><SelectTrigger><SelectValue placeholder="Cliente avulso"/></SelectTrigger><SelectContent>{data.customers.map(c=><SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}</SelectContent></Select></div>
-      <div className="field"><Label>Pagamento</Label><Select name="paymentMethod" value={payment} onValueChange={setPayment}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="pix">PIX</SelectItem><SelectItem value="dinheiro">Dinheiro</SelectItem><SelectItem value="cartao">Cartão</SelectItem><SelectItem value="parcelado">Parcelado / Fiado</SelectItem></SelectContent></Select></div>
-      <div className="field"><Label>Desconto (R$)</Label><Input name="discount" type="number" inputMode="decimal" min="0" max={subtotal} step="0.01" defaultValue="0"/></div>
-      {payment==="parcelado"&&<><div className="field"><Label>Parcelas</Label><Input name="installments" type="number" min="1" max="12" defaultValue="2"/></div><div className="field"><Label>Primeiro vencimento</Label><Input name="dueDate" type="date" defaultValue={next.toISOString().slice(0,10)}/></div></>}
+function ProductsView({
+  products,
+  search,
+  setSearch,
+  open,
+  edit,
+}: {
+  products: Product[];
+  search: string;
+  setSearch: (v: string) => void;
+  open: () => void;
+  edit: (product: Product) => void;
+}) {
+  return (
+    <>
+      <PageTitle
+        eyebrow="CATÁLOGO"
+        title="Meus produtos"
+        action={
+          <Button onClick={open}>
+            <Plus /> Novo produto
+          </Button>
+        }
+      />
+      <div className="search">
+        <Search />
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar nome, marca ou código…"
+        />
+      </div>
+      <div className="product-grid">
+        {products.map((p) => {
+          const preregistered = p.salePrice <= 0;
+          const available = !preregistered && p.stock >= 1;
+          return (
+            <article className="product-card" key={p.id}>
+              <div
+                className={
+                  p.photoUrl ? "product-visual has-photo" : "product-visual"
+                }
+              >
+                {p.photoUrl ? (
+                  <img
+                    src={p.photoUrl}
+                    alt={p.name}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "contain",
+                      objectPosition: "center",
+                      padding: "8px",
+                    }}
+                  />
+                ) : (
+                  <ShoppingBag />
+                )}
+                <span>{p.brand}</span>
+              </div>
+              <div>
+                <small>#{p.barcode}</small>
+                <div
+                  className={`product-status ${available ? "active" : preregistered ? "preregistered" : "out-of-stock"}`}
+                >
+                  {available
+                    ? "Disponível"
+                    : preregistered
+                      ? "Pré-cadastrado"
+                      : "Sem estoque"}
+                </div>
+                <h3>{p.name}</h3>
+                <p>
+                  <b>{preregistered ? "Preço pendente" : money(p.salePrice)}</b>
+                  <span>{p.stock} em estoque</span>
+                </p>
+                <footer>
+                  <span>
+                    {p.costPrice > 0
+                      ? `Custo ${money(p.costPrice)}`
+                      : "Custo pendente"}
+                  </span>
+                  {!preregistered && (
+                    <span className="profit">
+                      Lucro {money(p.salePrice - p.costPrice)}
+                    </span>
+                  )}
+                </footer>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="edit-product"
+                  onClick={() => edit(p)}
+                >
+                  <Pencil />{" "}
+                  {preregistered || p.stock < 1
+                    ? "Dar entrada / editar"
+                    : "Editar produto"}
+                </Button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      {!products.length && (
+        <Empty icon={ShoppingBag} text="Cadastre seu primeiro produto" />
+      )}
+    </>
+  );
+}
+function CustomersView({
+  customers,
+  open,
+}: {
+  customers: Customer[];
+  open: () => void;
+}) {
+  return (
+    <>
+      <PageTitle
+        eyebrow="RELACIONAMENTO"
+        title="Clientes"
+        action={
+          <Button onClick={open}>
+            <Plus /> Novo cliente
+          </Button>
+        }
+      />
+      <section className="customer-grid">
+        {customers.map((c) => {
+          const paymentTone =
+            c.paymentStatus === "Em atraso"
+              ? "danger"
+              : c.paymentStatus === "Atenção"
+                ? "warning"
+                : c.paymentStatus === "Em dia"
+                  ? "good"
+                  : "neutral";
+          return (
+            <article className="customer-card" key={c.id}>
+              <header>
+                <span className="avatar">
+                  {c.name.slice(0, 2).toUpperCase()}
+                </span>
+                <div>
+                  <b>{c.name}</b>
+                  <small>{c.phone || "Sem telefone"}</small>
+                </div>
+                {c.phone && (
+                  <a
+                    href={`https://wa.me/55${c.phone.replace(/\D/g, "")}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    WhatsApp
+                  </a>
+                )}
+              </header>
+              <div className="customer-badges">
+                <span
+                  className={`loyalty loyalty-${c.loyaltyLevel.toLowerCase()}`}
+                >
+                  ★ {c.loyaltyLevel}
+                </span>
+                <span className={`payment-status ${paymentTone}`}>
+                  {c.paymentStatus}
+                </span>
+              </div>
+              <div className="customer-metrics">
+                <div>
+                  <small>Total comprado</small>
+                  <b>{money(c.totalPurchased)}</b>
+                </div>
+                <div>
+                  <small>Saldo pendente</small>
+                  <b>{money(c.pendingBalance)}</b>
+                </div>
+                <div>
+                  <small>Compras</small>
+                  <b>{c.purchaseCount}</b>
+                </div>
+              </div>
+              {c.overdueCount > 0 && (
+                <p className="customer-alert">
+                  {c.overdueCount}{" "}
+                  {c.overdueCount === 1
+                    ? "parcela vencida"
+                    : "parcelas vencidas"}
+                </p>
+              )}
+            </article>
+          );
+        })}
+        {!customers.length && (
+          <section className="panel">
+            <Empty icon={Users} text="Cadastre sua primeira cliente" />
+          </section>
+        )}
+      </section>
+    </>
+  );
+}
+function SalesView({
+  data,
+  open,
+  scan,
+}: {
+  data: Data;
+  open: () => void;
+  scan: () => void;
+}) {
+  return (
+    <>
+      <PageTitle
+        eyebrow="MOVIMENTO"
+        title="Vendas"
+        action={
+          <div className="page-actions">
+            <Button variant="outline" onClick={open}>
+              <Plus /> Manual
+            </Button>
+            <Button onClick={scan}>
+              <Barcode /> Vender com câmera
+            </Button>
+          </div>
+        }
+      />
+      <div className="stats mini">
+        <article className="stat">
+          <small>Total vendido</small>
+          <strong>{money(data.dashboard.salesTotal)}</strong>
+        </article>
+        <article className="stat">
+          <small>Já recebido</small>
+          <strong>{money(data.dashboard.received)}</strong>
+        </article>
+        <article className="stat">
+          <small>A receber</small>
+          <strong>{money(data.dashboard.pending)}</strong>
+        </article>
+      </div>
+      <section className="panel">
+        <Empty
+          icon={CircleDollarSign}
+          text={
+            data.dashboard.salesTotal
+              ? "Resumo atualizado com suas vendas"
+              : "Leia um código para registrar a primeira venda"
+          }
+        />
+      </section>
+    </>
+  );
+}
+function ChargesView({
+  charges,
+  pay,
+}: {
+  charges: Charge[];
+  pay: (id: number) => void;
+}) {
+  const [tab, setTab] = useState("todas");
+  const list = charges.filter((c) => tab === "todas" || c.status === tab);
+  return (
+    <>
+      <PageTitle eyebrow="FINANCEIRO" title="Cobranças" />
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList>
+          <TabsTrigger value="todas">Todas</TabsTrigger>
+          <TabsTrigger value="overdue">Atrasadas</TabsTrigger>
+          <TabsTrigger value="upcoming">Próximas</TabsTrigger>
+        </TabsList>
+      </Tabs>
+      <section className="panel list-panel">
+        {list.map((c) => (
+          <div className="charge-full" key={c.id}>
+            <ChargeRow c={c} />
+            <div>
+              <a
+                className="whatsapp"
+                href={whatsappLink(c)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Send /> Lembrar no WhatsApp
+              </a>
+              <Button variant="outline" onClick={() => pay(c.id)}>
+                <Check /> Recebido
+              </Button>
+            </div>
+          </div>
+        ))}
+        {!list.length && (
+          <Empty icon={Bell} text="Nenhuma cobrança nesta lista" />
+        )}
+      </section>
+    </>
+  );
+}
+function ChargeRow({ c }: { c: Charge }) {
+  return (
+    <div className="charge-row">
+      <span className={c.status === "overdue" ? "due late" : "due"}>
+        {dateBR(c.dueDate)}
+      </span>
+      <div>
+        <b>{c.customerName}</b>
+        <small>
+          Parcela {c.installmentNumber} •{" "}
+          {c.status === "overdue" ? "Atrasada" : "A vencer"}
+        </small>
+      </div>
+      <strong>{money(c.amount)}</strong>
     </div>
-    <div className="dialog-actions"><Button type="button" variant="ghost" onClick={close}>Cancelar</Button><Button type="submit" disabled={saving||!cart.length}>{saving?<Loader2 className="spin"/>:<CircleDollarSign/>} Concluir {money(subtotal)}</Button></div>
-  </form>}</DialogContent></Dialog>
+  );
 }
-function DialogActions({close,saving}:{close:()=>void;saving:boolean}){return <div className="dialog-actions"><Button type="button" variant="ghost" onClick={close}>Cancelar</Button><Button type="submit" disabled={saving}>{saving&&<Loader2 className="spin"/>} Salvar</Button></div>}
-function ScannerDialog({open,close,onCode,purpose="register"}:{open:boolean;close:()=>void;onCode:(c:string)=>void;purpose?:"register"|"sale"}){const video=useRef<HTMLVideoElement>(null),handled=useRef(false);const [message,setMessage]=useState(purpose==="sale"?"Aponte para o código do produto":"Aponte para o código de barras"),[manualCode,setManualCode]=useState("");useEffect(()=>{let stream:MediaStream|undefined;let timer:number|undefined;handled.current=false;setMessage(purpose==="sale"?"Aponte para o código de barras ou QR Code":"Aponte para o código de barras ou QR Code");if(open){navigator.mediaDevices?.getUserMedia({video:{facingMode:"environment"}}).then(async s=>{stream=s;if(video.current){video.current.srcObject=s;await video.current.play()}const Detector=(window as any).BarcodeDetector;if(!Detector){setMessage("Leitura automática indisponível neste aparelho. Digite o código manualmente.");return}const detector=new Detector({formats:["qr_code","ean_13","ean_8","code_128","code_39","itf"]});timer=window.setInterval(async()=>{if(!handled.current&&video.current?.readyState===4){const found=await detector.detect(video.current).catch(()=>[]);if(found[0]?.rawValue){handled.current=true;onCode(found[0].rawValue)}}},400)}).catch(()=>setMessage("Permita o uso da câmera para ler o código."))}return()=>{if(timer)clearInterval(timer);stream?.getTracks().forEach(t=>t.stop())}},[open,onCode,purpose]);return <Dialog open={open} onOpenChange={v=>!v&&close()}><DialogContent className="scanner"><DialogHeader><DialogTitle>{purpose==="sale"?"Vender com câmera":"Escanear produto"}</DialogTitle><DialogDescription>{message}</DialogDescription></DialogHeader><div className="camera"><video ref={video} muted playsInline/><span></span><Barcode/></div><div className="scanner-manual"><Input value={manualCode} onChange={e=>setManualCode(e.target.value)} inputMode="numeric" placeholder="Ou digite o código"/><Button type="button" disabled={!manualCode.trim()} onClick={()=>onCode(manualCode.trim())}>Buscar</Button></div><Button variant="outline" onClick={close}><X/> Fechar câmera</Button></DialogContent></Dialog>}
+function whatsappLink(c: Charge) {
+  const phone = `55${c.phone.replace(/\D/g, "")}`;
+  const msg = `Olá, ${c.customerName}! Tudo bem? 😊 Passando para lembrar que sua parcela de ${money(c.amount)} ${c.status === "overdue" ? "venceu" : "vence"} em ${new Intl.DateTimeFormat("pt-BR").format(new Date(`${c.dueDate}T12:00:00`))}. Se já realizou o pagamento, pode desconsiderar. Obrigada! Walquíria Maia`;
+  return `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+}
+function SupplierBillsView({
+  bills,
+  dashboard,
+  open,
+  pay,
+}: {
+  bills: SupplierBill[];
+  dashboard: Dashboard;
+  open: () => void;
+  pay: (id: number) => void;
+}) {
+  const [tab, setTab] = useState("pending");
+  const list = bills.filter(
+    (b) =>
+      tab === "all" ||
+      (tab === "pending" && b.status !== "paid") ||
+      (tab === "alert" && ["overdue", "today", "dueSoon"].includes(b.status)) ||
+      b.status === tab,
+  );
+  async function enableAlerts() {
+    if (typeof Notification !== "undefined")
+      await Notification.requestPermission();
+  }
+  return (
+    <>
+      <PageTitle
+        eyebrow="CONTAS A PAGAR"
+        title="Boletos de fornecedores"
+        action={
+          <Button onClick={open}>
+            <Plus /> Novo boleto
+          </Button>
+        }
+      />
+      <div className="stats mini">
+        <article className="stat">
+          <small>Total pendente</small>
+          <strong>{money(dashboard.supplierPendingTotal)}</strong>
+        </article>
+        <article className="stat">
+          <small>Vencem em até 3 dias</small>
+          <strong>{dashboard.supplierDueSoonCount}</strong>
+        </article>
+        <article className="stat">
+          <small>Vencidos</small>
+          <strong>{dashboard.supplierOverdueCount}</strong>
+        </article>
+      </div>
+      <div className="bill-toolbar">
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList>
+            <TabsTrigger value="pending">Pendentes</TabsTrigger>
+            <TabsTrigger value="alert">Avisos</TabsTrigger>
+            <TabsTrigger value="paid">Pagos</TabsTrigger>
+            <TabsTrigger value="all">Todos</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        {typeof Notification !== "undefined" &&
+          Notification.permission !== "granted" && (
+            <Button variant="outline" onClick={enableAlerts}>
+              <Bell /> Ativar avisos
+            </Button>
+          )}
+      </div>
+      <section className="panel list-panel">
+        {list.map((b) => (
+          <div className="supplier-bill" key={b.id}>
+            <span className={`due bill-${b.status}`}>{dateBR(b.dueDate)}</span>
+            <div>
+              <b>{b.supplierName}</b>
+              <small>{b.description || "Boleto de fornecedor"}</small>
+              <em>
+                {b.status === "overdue"
+                  ? "Vencido"
+                  : b.status === "today"
+                    ? "Vence hoje"
+                    : b.status === "dueSoon"
+                      ? `Vence em ${b.daysUntilDue} dia(s)`
+                      : b.status === "paid"
+                        ? "Pago"
+                        : "A vencer"}
+              </em>
+              {b.barcodeLine && (
+                <button
+                  type="button"
+                  className="copy-code"
+                  onClick={() => navigator.clipboard.writeText(b.barcodeLine)}
+                >
+                  Copiar código do boleto
+                </button>
+              )}
+            </div>
+            <strong>{money(b.amount)}</strong>
+            {b.status !== "paid" && (
+              <Button variant="outline" onClick={() => pay(b.id)}>
+                <Check /> Marcar pago
+              </Button>
+            )}
+          </div>
+        ))}
+        {!list.length && (
+          <Empty icon={ReceiptText} text="Nenhum boleto nesta lista" />
+        )}
+      </section>
+    </>
+  );
+}
+function FinanceView({
+  api,
+  notify,
+}: {
+  api: (action: string, payload?: Record<string, unknown>) => Promise<any>;
+  notify: (message: string) => void;
+}) {
+  const [report, setReport] = useState<FinanceReport | null>(null),
+    [loading, setLoading] = useState(true),
+    [showForm, setShowForm] = useState(false),
+    [saving, setSaving] = useState(false);
+  async function refresh() {
+    setLoading(true);
+    try {
+      setReport(await api("finance_report"));
+    } catch (e) {
+      notify(
+        e instanceof Error ? e.message : "Não foi possível carregar o caixa.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    void refresh();
+  }, []);
+  async function saveEntry(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const values = Object.fromEntries(new FormData(e.currentTarget));
+      await api("create_cash_entry", values);
+      notify("Lançamento salvo no caixa.");
+      setShowForm(false);
+      await refresh();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Não foi possível salvar.");
+    } finally {
+      setSaving(false);
+    }
+  }
+  const summary = report?.summary || {
+    income: 0,
+    expenses: 0,
+    balance: 0,
+    sales: 0,
+    outstanding: 0,
+    costOfGoods: 0,
+    estimatedProfit: 0,
+  };
+  return (
+    <>
+      <PageTitle
+        eyebrow="GESTÃO FINANCEIRA"
+        title="Caixa da loja"
+        action={
+          <Button onClick={() => setShowForm((v) => !v)}>
+            <Plus /> {showForm ? "Fechar" : "Novo lançamento"}
+          </Button>
+        }
+      />
+      <div className="stats finance-stats">
+        <article className="stat primary">
+          <small>Vendas do mês</small>
+          <strong>{money(summary.sales)}</strong>
+          <span>total vendido no período</span>
+        </article>
+        <article className="stat">
+          <small>Entradas recebidas</small>
+          <strong>{money(summary.income)}</strong>
+          <span>à vista e parcelas pagas</span>
+        </article>
+        <article className="stat">
+          <small>A receber</small>
+          <strong>{money(summary.outstanding)}</strong>
+          <span>parcelas ainda pendentes</span>
+        </article>
+        <article className="stat">
+          <small>Despesas pagas</small>
+          <strong>{money(summary.expenses)}</strong>
+          <span>boletos e lançamentos</span>
+        </article>
+        <article className="stat">
+          <small>Saldo do caixa</small>
+          <strong>{money(summary.balance)}</strong>
+          <span>recebimentos menos pagamentos</span>
+        </article>
+        <article className="stat">
+          <small>Lucro estimado</small>
+          <strong>{money(summary.estimatedProfit)}</strong>
+          <span>vendas menos custo e despesas manuais</span>
+        </article>
+      </div>
+      {showForm && (
+        <section className="panel finance-form">
+          <div className="panel-head">
+            <div>
+              <small>NOVO LANÇAMENTO</small>
+              <h2>Registrar no caixa</h2>
+            </div>
+          </div>
+          <form onSubmit={saveEntry} className="form">
+            <div className="field">
+              <Label>Tipo</Label>
+              <Select name="kind" defaultValue="expense">
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="income">Entrada</SelectItem>
+                  <SelectItem value="expense">Despesa</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="field">
+              <Label>Categoria</Label>
+              <Input
+                name="category"
+                placeholder="Ex.: transporte, embalagem"
+                required
+              />
+            </div>
+            <div className="field full">
+              <Label>Descrição</Label>
+              <Input
+                name="description"
+                placeholder="O que entrou ou foi pago?"
+                required
+              />
+            </div>
+            <div className="field">
+              <Label>Valor</Label>
+              <Input
+                name="amount"
+                type="number"
+                inputMode="decimal"
+                min="0.01"
+                step="0.01"
+                placeholder="0,00"
+                required
+              />
+            </div>
+            <div className="field">
+              <Label>Forma</Label>
+              <Select name="paymentMethod" defaultValue="pix">
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pix">PIX</SelectItem>
+                  <SelectItem value="cash">Dinheiro</SelectItem>
+                  <SelectItem value="card">Cartão</SelectItem>
+                  <SelectItem value="transfer">Transferência</SelectItem>
+                  <SelectItem value="other">Outro</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="field">
+              <Label>Data</Label>
+              <Input
+                name="occurredAt"
+                type="date"
+                defaultValue={new Date().toISOString().slice(0, 10)}
+                required
+              />
+            </div>
+            <div className="dialog-actions full">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowForm(false)}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? <Loader2 className="spin" /> : <Check />} Salvar no
+                caixa
+              </Button>
+            </div>
+          </form>
+        </section>
+      )}
+      <section className="panel finance-list">
+        <div className="panel-head">
+          <div>
+            <small>MOVIMENTAÇÃO</small>
+            <h2>Lançamentos recentes</h2>
+          </div>
+          <Button variant="outline" onClick={refresh} disabled={loading}>
+            {loading ? <Loader2 className="spin" /> : "Atualizar"}
+          </Button>
+        </div>
+        {loading && !report ? (
+          <div className="center">
+            <Loader2 className="spin" /> Carregando caixa…
+          </div>
+        ) : (
+          report?.entries.map((entry) => {
+            const pending = entry.kind === "pending";
+            return (
+              <article className="cash-entry" key={entry.id}>
+                <span
+                  className={
+                    entry.kind === "income"
+                      ? "cash-in"
+                      : pending
+                        ? "cash-pending"
+                        : "cash-out"
+                  }
+                >
+                  {entry.kind === "income" ? "+" : pending ? "…" : "−"}
+                </span>
+                <div>
+                  <b>{entry.description}</b>
+                  <small>
+                    {entry.category} · {pending ? "vence em " : ""}
+                    {new Date(entry.occurredAt).toLocaleDateString("pt-BR")}
+                  </small>
+                </div>
+                <strong
+                  className={
+                    entry.kind === "income"
+                      ? "positive"
+                      : pending
+                        ? "pending-value"
+                        : "negative"
+                  }
+                >
+                  {entry.kind === "income"
+                    ? "+ "
+                    : entry.kind === "expense"
+                      ? "− "
+                      : ""}
+                  {money(entry.amount)}
+                </strong>
+              </article>
+            );
+          })
+        )}
+        {!loading && !report?.entries.length && (
+          <Empty icon={Wallet} text="Nenhuma movimentação neste período" />
+        )}
+      </section>
+      <section className="panel receipt-history">
+        <div className="panel-head">
+          <div>
+            <small>COMPROVANTES</small>
+            <h2>Vendas do período</h2>
+          </div>
+          <span>{report?.receipts?.length || 0} venda(s)</span>
+        </div>
+        <div className="receipt-history-list">
+          {report?.receipts?.map((receipt) => {
+            const phone = receipt.customerPhone.replace(/\D/g, ""),
+              target = phone ? `55${phone.replace(/^55/, "")}` : "";
+            return (
+              <article
+                className="receipt-history-card"
+                key={receipt.receiptCode}
+              >
+                <span className="receipt-history-icon">
+                  <ReceiptText />
+                </span>
+                <div className="receipt-history-info">
+                  <b>{receipt.customerName || "Cliente avulso"}</b>
+                  <small>
+                    {new Date(receipt.soldAt).toLocaleString("pt-BR")} ·{" "}
+                    {receipt.items.length} item(ns)
+                  </small>
+                  <span>
+                    {receipt.items
+                      .map((item) => `${item.quantity}x ${item.name}`)
+                      .join(", ")}
+                  </span>
+                </div>
+                <strong>{money(receipt.total)}</strong>
+                <div className="receipt-history-actions">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      if (!openFinanceReceipt(receipt))
+                        notify(
+                          "Permita a abertura de janelas para gerar o PDF.",
+                        );
+                    }}
+                  >
+                    <ReceiptText /> PDF
+                  </Button>
+                  <a
+                    className="receipt-resend"
+                    href={`https://wa.me/${target}?text=${encodeURIComponent(financeReceiptText(receipt))}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <Share /> Reenviar
+                  </a>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+        {!loading && !report?.receipts?.length && (
+          <Empty icon={ReceiptText} text="Nenhum comprovante neste período" />
+        )}
+      </section>
+    </>
+  );
+}
+
+function Empty({ icon: Icon, text }: { icon: any; text: string }) {
+  return (
+    <div className="empty">
+      <Icon />
+      <b>{text}</b>
+      <span>Quando houver informações, elas aparecerão aqui.</span>
+    </div>
+  );
+}
+
+function ProductDialog({
+  open,
+  close,
+  save,
+  saving,
+  scan,
+  lookup,
+  onExisting,
+  product,
+}: {
+  open: boolean;
+  close: () => void;
+  save: any;
+  saving: boolean;
+  scan: () => void;
+  lookup: (barcode: string) => Promise<any>;
+  onExisting: (id: number) => void;
+  product: Product | null;
+}) {
+  const [code, setCode] = useState(""),
+    [name, setName] = useState(""),
+    [brand, setBrand] = useState("Rommanel"),
+    [photo, setPhoto] = useState<File | null>(null),
+    [preview, setPreview] = useState(""),
+    [catalogImage, setCatalogImage] = useState(""),
+    [removePhoto, setRemovePhoto] = useState(false),
+    [looking, setLooking] = useState(false),
+    [lookupNote, setLookupNote] = useState("");
+  const cameraInput = useRef<HTMLInputElement>(null),
+    galleryInput = useRef<HTMLInputElement>(null);
+  async function findBarcode(value = code) {
+    const clean = value.trim();
+    if (clean.length < 4) return;
+    setLooking(true);
+    setLookupNote("");
+    try {
+      const result = await lookup(clean);
+      if (!result.found) {
+        setLookupNote(
+          "Código novo. Complete os dados e ele será incluído no catálogo.",
+        );
+        return;
+      }
+      const found = result.product;
+      if (result.registered && Number.isInteger(Number(found.id))) {
+        onExisting(Number(found.id));
+        return;
+      }
+      setName(found.name || "");
+      setBrand(found.brand || "Outros");
+      if (found.imageUrl && !product?.photoUrl) {
+        setPreview(found.imageUrl);
+        setCatalogImage(found.imageUrl);
+      }
+      setLookupNote(
+        `Produto encontrado no catálogo: ${found.source || "WM Vendas"}.`,
+      );
+    } catch (e) {
+      setLookupNote(
+        e instanceof Error
+          ? e.message
+          : "Não foi possível consultar o catálogo.",
+      );
+    } finally {
+      setLooking(false);
+    }
+  }
+  useEffect(() => {
+    if (open) {
+      const scanned = sessionStorage.getItem("wm-scanned-code");
+      const nextCode = scanned || product?.barcode || "";
+      setCode(nextCode);
+      setName(product?.name || "");
+      setBrand(product?.brand || "Rommanel");
+      if (scanned) sessionStorage.removeItem("wm-scanned-code");
+      setPhoto(null);
+      setPreview(product?.photoUrl || "");
+      setCatalogImage("");
+      setRemovePhoto(false);
+      setLookupNote("");
+      if (scanned) void findBarcode(scanned);
+    }
+  }, [open, product]);
+  function choose(file?: File) {
+    if (!file) return;
+    setPhoto(file);
+    setCatalogImage("");
+    setRemovePhoto(false);
+    const url = URL.createObjectURL(file);
+    setPreview((old) => {
+      if (old.startsWith("blob:")) URL.revokeObjectURL(old);
+      return url;
+    });
+  }
+  function remove() {
+    if (preview.startsWith("blob:")) URL.revokeObjectURL(preview);
+    setPreview("");
+    setCatalogImage("");
+    setPhoto(null);
+    setRemovePhoto(Boolean(product?.photoUrl));
+  }
+  async function send(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const values: Record<string, unknown> = Object.fromEntries(
+      new FormData(e.currentTarget),
+    );
+    values.catalogImageUrl = catalogImage;
+    if (photo) values.photo = await prepareProductPhoto(photo);
+    if (product) {
+      values.id = product.id;
+      values.removePhoto = removePhoto;
+    }
+    await save(product ? "update_product" : "create_product", values);
+  }
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && close()}>
+      <DialogContent className="product-dialog">
+        <DialogHeader>
+          <DialogTitle>
+            {product ? "Editar produto" : "Novo produto"}
+          </DialogTitle>
+          <DialogDescription>
+            {product
+              ? "Complete ou altere os dados. Produtos sem preço ficam somente no catálogo do vendedor."
+              : "Cadastre agora o código, nome e imagem. Preços e estoque podem ser preenchidos quando a mercadoria chegar."}
+          </DialogDescription>
+        </DialogHeader>
+        <form key={product?.id || "new"} onSubmit={send} className="form">
+          <div className="field full">
+            <Label>Foto do produto (opcional)</Label>
+            <div className="photo-picker">
+              {preview ? (
+                <div className="photo-preview">
+                  <img src={preview} alt="Prévia do produto" />
+                  <button
+                    type="button"
+                    aria-label="Remover foto"
+                    onClick={remove}
+                  >
+                    <X />
+                  </button>
+                </div>
+              ) : (
+                <div className="photo-placeholder">
+                  <ImagePlus />
+                  <span>A foto aparecerá no estoque</span>
+                </div>
+              )}
+              <div className="photo-actions">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => cameraInput.current?.click()}
+                >
+                  <Camera /> Tirar foto
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => galleryInput.current?.click()}
+                >
+                  <ImagePlus /> Galeria
+                </Button>
+              </div>
+              <input
+                ref={cameraInput}
+                className="sr-only"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                capture="environment"
+                onChange={(e) => choose(e.target.files?.[0])}
+              />
+              <input
+                ref={galleryInput}
+                className="sr-only"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={(e) => choose(e.target.files?.[0])}
+              />
+            </div>
+          </div>
+          <div className="field full">
+            <Label>Código de barras ou referência</Label>
+            <div className="barcode-lookup">
+              <Input
+                name="barcode"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                onBlur={() => void findBarcode()}
+                required
+                placeholder="Ex.: 5251210006"
+              />
+              <Button type="button" variant="outline" onClick={scan}>
+                <Camera /> Ler
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={looking || code.trim().length < 4}
+                onClick={() => void findBarcode()}
+              >
+                {looking ? <Loader2 className="spin" /> : <Search />} Buscar
+              </Button>
+            </div>
+            {lookupNote && (
+              <small
+                className={
+                  lookupNote.startsWith("Produto encontrado")
+                    ? "lookup-found"
+                    : "lookup-note"
+                }
+              >
+                {lookupNote}
+              </small>
+            )}
+          </div>
+          <div className="field full">
+            <Label>Nome do produto</Label>
+            <Input
+              name="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              placeholder="Ex.: Brinco infantil com cristal"
+            />
+          </div>
+          <div className="field full">
+            <Label>Marca</Label>
+            <Select name="brand" value={brand} onValueChange={setBrand}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Rommanel">Rommanel</SelectItem>
+                <SelectItem value="Natura">Natura</SelectItem>
+                <SelectItem value="O Boticário">O Boticário</SelectItem>
+                <SelectItem value="Eudora">Eudora</SelectItem>
+                <SelectItem value="Avon">Avon</SelectItem>
+                <SelectItem value="Amaggod">Amaggod</SelectItem>
+                <SelectItem value="Jequiti">Jequiti</SelectItem>
+                <SelectItem value="Vestuário">Vestuário</SelectItem>
+                <SelectItem value="Calçados">Calçados</SelectItem>
+                <SelectItem value="Acessórios">Acessórios</SelectItem>
+                <SelectItem value="Cosméticos">Cosméticos</SelectItem>
+                <SelectItem value="Perfumaria">Perfumaria</SelectItem>
+                <SelectItem value="Outros">Outros</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="field">
+            <Label>Preço de custo (opcional)</Label>
+            <Input
+              name="costPrice"
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min="0"
+              placeholder="Preencher quando comprar"
+              defaultValue={product?.costPrice || ""}
+            />
+          </div>
+          <div className="field">
+            <Label>Preço de venda (opcional)</Label>
+            <Input
+              name="salePrice"
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min="0"
+              placeholder="Definir depois"
+              defaultValue={product?.salePrice || ""}
+            />
+          </div>
+          <div className="field full">
+            <Label>Quantidade em estoque (opcional)</Label>
+            <Input
+              name="stock"
+              type="number"
+              inputMode="numeric"
+              min="0"
+              placeholder="0"
+              defaultValue={product?.stock || ""}
+            />
+            <small className="field-help">
+              Sem preço ou estoque, o produto fica pré-cadastrado e não aparece
+              na loja.
+            </small>
+          </div>
+          <DialogActions close={close} saving={saving} />
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+function CustomerDialog({
+  open,
+  close,
+  save,
+  saving,
+}: {
+  open: boolean;
+  close: () => void;
+  save: any;
+  saving: boolean;
+}) {
+  function send(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    save("create_customer", Object.fromEntries(new FormData(e.currentTarget)));
+  }
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && close()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Nova cliente</DialogTitle>
+          <DialogDescription>
+            Guarde o contato para vendas e lembretes de cobrança.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={send} className="form">
+          <div className="field full">
+            <Label>Nome completo</Label>
+            <Input name="name" required autoFocus />
+          </div>
+          <div className="field full">
+            <Label>WhatsApp</Label>
+            <Input name="phone" inputMode="tel" placeholder="(11) 99999-9999" />
+          </div>
+          <DialogActions close={close} saving={saving} />
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+function SupplierBillDialog({
+  open,
+  close,
+  save,
+  saving,
+}: {
+  open: boolean;
+  close: () => void;
+  save: any;
+  saving: boolean;
+}) {
+  function send(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    save(
+      "create_supplier_bill",
+      Object.fromEntries(new FormData(e.currentTarget)),
+    );
+  }
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && close()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Novo boleto de fornecedor</DialogTitle>
+          <DialogDescription>
+            Cadastre o vencimento para receber o aviso com 3 dias de
+            antecedência.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={send} className="form">
+          <div className="field full">
+            <Label>Fornecedor</Label>
+            <Input
+              name="supplierName"
+              required
+              autoFocus
+              placeholder="Ex.: Rommanel"
+            />
+          </div>
+          <div className="field full">
+            <Label>Descrição</Label>
+            <Input name="description" placeholder="Ex.: Pedido de setembro" />
+          </div>
+          <div className="field">
+            <Label>Valor</Label>
+            <Input
+              name="amount"
+              type="number"
+              step="0.01"
+              min="0.01"
+              required
+            />
+          </div>
+          <div className="field">
+            <Label>Data de vencimento</Label>
+            <Input name="dueDate" type="date" required />
+          </div>
+          <div className="field full">
+            <Label>Linha digitável ou código (opcional)</Label>
+            <Input
+              name="barcodeLine"
+              inputMode="numeric"
+              placeholder="Cole ou digite o código do boleto"
+            />
+          </div>
+          <DialogActions close={close} saving={saving} />
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+function buildInstallments(total: number, count: number, firstDate: string) {
+  if (!firstDate || count < 1) return [];
+  const source = new Date(`${firstDate}T12:00:00`),
+    day = source.getDate();
+  return Array.from({ length: count }, (_, index) => {
+    const base = new Date(
+      source.getFullYear(),
+      source.getMonth() + index,
+      1,
+      12,
+    );
+    const lastDay = new Date(
+      base.getFullYear(),
+      base.getMonth() + 1,
+      0,
+    ).getDate();
+    base.setDate(Math.min(day, lastDay));
+    const regular = Math.round((total / count) * 100) / 100;
+    const amount =
+      index === count - 1
+        ? Math.round((total - regular * (count - 1)) * 100) / 100
+        : regular;
+    return {
+      number: index + 1,
+      dueDate: `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}-${String(base.getDate()).padStart(2, "0")}`,
+      amount,
+    };
+  });
+}
+function receiptHtml(value: unknown) {
+  return String(value ?? "").replace(/[&<>"]/g, (char) =>
+    char === "&"
+      ? "&amp;"
+      : char === "<"
+        ? "&lt;"
+        : char === ">"
+          ? "&gt;"
+          : "&quot;",
+  );
+}
+function paymentLabel(value: string) {
+  return (
+    (
+      {
+        pix: "PIX",
+        cash: "Dinheiro",
+        card: "Cartão",
+        credit: "Cartão de crédito",
+        debit: "Cartão de débito",
+        parcelado: "Parcelado",
+        fiado: "A prazo",
+      } as Record<string, string>
+    )[value] ||
+    value ||
+    "Não informado"
+  );
+}
+function financeReceiptText(receipt: SaleReceipt) {
+  const lines = receipt.items
+      .map(
+        (item) => `${item.quantity}x ${item.name} — ${money(item.lineTotal)}`,
+      )
+      .join("\n"),
+    dates = receipt.installmentDates
+      .map(
+        (item) =>
+          `${item.number}ª parcela: ${money(item.amount)} - ${new Date(`${item.dueDate}T12:00:00`).toLocaleDateString("pt-BR")}`,
+      )
+      .join("\n");
+  return `*WM Vendas — Comprovante*\n${new Date(receipt.soldAt).toLocaleString("pt-BR")}\nCliente: ${receipt.customerName || "Cliente avulso"}\nWhatsApp: ${receipt.customerPhone || "Não informado"}\n\n${lines}\n\nSubtotal: ${money(receipt.subtotal)}\nDesconto: ${money(receipt.discount)}\n*Total: ${money(receipt.total)}*\nPagamento: ${paymentLabel(receipt.paymentMethod)}${receipt.installments > 1 ? ` em ${receipt.installments}x` : ""}${dates ? `\n\n*Vencimentos*\n${dates}` : ""}\n\nObrigada pela preferência!\nWalquíria Maia`;
+}
+function openFinanceReceipt(receipt: SaleReceipt) {
+  const popup = window.open("", "_blank");
+  if (!popup) return false;
+  const rows = receipt.items
+      .map(
+        (item) =>
+          `<tr><td>${item.quantity}x ${receiptHtml(item.name)}</td><td>${money(item.unitPrice)}</td><td>${money(item.lineTotal)}</td></tr>`,
+      )
+      .join(""),
+    schedule = receipt.installmentDates
+      .map(
+        (item) =>
+          `<tr><td>${item.number}ª parcela</td><td>${new Date(`${item.dueDate}T12:00:00`).toLocaleDateString("pt-BR")}</td><td>${money(item.amount)}</td></tr>`,
+      )
+      .join("");
+  popup.document.write(
+    `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Comprovante ${receiptHtml(receipt.receiptCode)}</title><style>@page{size:A4;margin:12mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{margin:0;color:#35242b;font:14px Arial,sans-serif}.paper{max-width:760px;margin:auto;border:1px solid #eadbe1;border-radius:18px;overflow:hidden}.head{padding:24px;background:linear-gradient(135deg,#7b2448,#9e5572);color:#fff}.head h1{margin:0;font:28px Georgia,serif}.head p{margin:5px 0 0}.body{padding:24px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:22px}.meta div{padding:11px;border-radius:10px;background:#fbf4f7}.meta b,.meta span{display:block}.meta span{margin-top:3px;color:#715c65}table{width:100%;border-collapse:collapse;margin:12px 0 22px}th,td{padding:10px 8px;border-bottom:1px solid #eadbe1;text-align:left}th:last-child,td:last-child{text-align:right}.totals{margin-left:auto;width:min(100%,330px)}.totals div{display:flex;justify-content:space-between;padding:6px}.grand{margin-top:6px!important;padding:12px!important;border-radius:10px;background:#f8eaf0;color:#7b2448;font-size:18px}.schedule{margin-top:24px}.foot{padding:18px 24px;background:#fff8fa;text-align:center;color:#715c65;font-size:12px}@media(max-width:560px){.meta{grid-template-columns:1fr}}@media print{.head,.meta div,.grand,.foot{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}</style></head><body><main class="paper"><header class="head"><h1>WM Vendas</h1><p>Walquíria Maia - Comprovante de venda</p></header><section class="body"><div class="meta"><div><b>Cliente</b><span>${receiptHtml(receipt.customerName || "Cliente avulso")}</span></div><div><b>WhatsApp</b><span>${receiptHtml(receipt.customerPhone || "Não informado")}</span></div><div><b>Data</b><span>${new Date(receipt.soldAt).toLocaleString("pt-BR")}</span></div><div><b>Pagamento</b><span>${receiptHtml(paymentLabel(receipt.paymentMethod))}${receipt.installments > 1 ? ` - ${receipt.installments} parcelas` : ""}</span></div></div><h2>Produtos</h2><table><thead><tr><th>Produto</th><th>Preço unitário</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table><div class="totals"><div><span>Subtotal</span><b>${money(receipt.subtotal)}</b></div><div><span>Desconto</span><b>${money(receipt.discount)}</b></div><div class="grand"><span>Total</span><b>${money(receipt.total)}</b></div></div>${schedule ? `<div class="schedule"><h2>Parcelas e vencimentos</h2><table><thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor</th></tr></thead><tbody>${schedule}</tbody></table></div>` : ""}</section><footer class="foot">Estoque, vendas e cobranças na palma da mão.<br>Documento gerado pelo WM Vendas.</footer></main><script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`,
+  );
+  popup.document.close();
+  return true;
+}
+function SaleDialog({
+  open,
+  close,
+  save,
+  saving,
+  data,
+  initialProductId,
+}: {
+  open: boolean;
+  close: () => void;
+  save: any;
+  saving: boolean;
+  data: Data;
+  initialProductId: string;
+}) {
+  const [productId, setProductId] = useState(""),
+    [cart, setCart] = useState<{ productId: number; quantity: number }[]>([]),
+    [payment, setPayment] = useState("pix"),
+    [receipt, setReceipt] = useState<any>(null);
+  const next = new Date();
+  next.setDate(next.getDate() + 30);
+  useEffect(() => {
+    if (open) {
+      setProductId(initialProductId);
+      setCart(
+        initialProductId
+          ? [{ productId: Number(initialProductId), quantity: 1 }]
+          : [],
+      );
+      setPayment("pix");
+      setReceipt(null);
+    }
+  }, [open, initialProductId]);
+  const selected = data.products.find((p) => String(p.id) === productId);
+  const subtotal = cart.reduce((sum, item) => {
+    const p = data.products.find((x) => x.id === item.productId);
+    return sum + (p?.salePrice || 0) * item.quantity;
+  }, 0);
+  function add() {
+    if (!selected) return;
+    setCart((items) => {
+      const found = items.find((i) => i.productId === selected.id);
+      if (found)
+        return items.map((i) =>
+          i.productId === selected.id
+            ? { ...i, quantity: Math.min(selected.stock, i.quantity + 1) }
+            : i,
+        );
+      return [...items, { productId: selected.id, quantity: 1 }];
+    });
+    setProductId("");
+  }
+  function quantity(id: number, delta: number) {
+    const product = data.products.find((p) => p.id === id);
+    setCart((items) =>
+      items.map((i) =>
+        i.productId === id
+          ? {
+              ...i,
+              quantity: Math.max(
+                1,
+                Math.min(product?.stock || 1, i.quantity + delta),
+              ),
+            }
+          : i,
+      ),
+    );
+  }
+  async function send(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!cart.length) return;
+    const values = Object.fromEntries(new FormData(e.currentTarget));
+    const operationId = crypto.randomUUID(),
+      installments =
+        payment === "parcelado" ? Number(values.installments || 1) : 1,
+      dueDate = String(values.dueDate || "");
+    const j = await save("create_express_sale", {
+      ...values,
+      items: cart,
+      operationId,
+    });
+    const customer = data.customers.find(
+      (c) => String(c.id) === String(values.customerId || ""),
+    );
+    if (j.queued) {
+      const items = cart.map((item) => {
+          const p = data.products.find((x) => x.id === item.productId)!;
+          return {
+            name: p.name,
+            quantity: item.quantity,
+            unitPrice: p.salePrice,
+            lineTotal: p.salePrice * item.quantity,
+          };
+        }),
+        total = subtotal - Number(values.discount || 0);
+      setReceipt({
+        offline: true,
+        receiptCode: operationId,
+        customerName: customer?.name || "Cliente avulso",
+        customerPhone: customer?.phone || "",
+        items,
+        subtotal,
+        total,
+        discount: Number(values.discount || 0),
+        paymentMethod: payment,
+        installments,
+        installmentDates:
+          payment === "parcelado"
+            ? buildInstallments(total, installments, dueDate)
+            : [],
+        soldAt: new Date().toISOString(),
+      });
+    } else
+      setReceipt({
+        ...j.receipt,
+        installmentDates:
+          payment === "parcelado"
+            ? buildInstallments(Number(j.receipt.total), installments, dueDate)
+            : [],
+      });
+  }
+  function receiptText() {
+    if (!receipt) return "";
+    const lines = (receipt.items || [])
+        .map((i: any) => `${i.quantity}x ${i.name} — ${money(i.lineTotal)}`)
+        .join("\n"),
+      dates = (receipt.installmentDates || [])
+        .map(
+          (item: any) =>
+            `${item.number}ª parcela: ${money(item.amount)} - ${new Date(`${item.dueDate}T12:00:00`).toLocaleDateString("pt-BR")}`,
+        )
+        .join("\n");
+    return `*WM Vendas — Comprovante*\n${new Date(receipt.soldAt).toLocaleString("pt-BR")}\nCliente: ${receipt.customerName || "Cliente avulso"}\nWhatsApp: ${receipt.customerPhone || "Não informado"}\n\n${lines}\n\nSubtotal: ${money(receipt.subtotal)}\nDesconto: ${money(receipt.discount)}\n*Total: ${money(receipt.total)}*\nPagamento: ${receipt.paymentMethod}${receipt.paymentMethod === "parcelado" ? ` em ${receipt.installments}x` : ""}${dates ? `\n\n*Vencimentos*\n${dates}` : ""}\n\nObrigada pela preferência!\nWalquíria Maia`;
+  }
+  function printReceipt() {
+    if (!receipt) return;
+    const popup = window.open("", "_blank");
+    if (!popup) return;
+    const itemRows = (receipt.items || [])
+        .map(
+          (item: any) =>
+            `<tr><td>${item.quantity}x ${receiptHtml(item.name)}</td><td>${money(item.unitPrice)}</td><td>${money(item.lineTotal)}</td></tr>`,
+        )
+        .join(""),
+      installmentRows = (receipt.installmentDates || [])
+        .map(
+          (item: any) =>
+            `<tr><td>${item.number}ª parcela</td><td>${new Date(`${item.dueDate}T12:00:00`).toLocaleDateString("pt-BR")}</td><td>${money(item.amount)}</td></tr>`,
+        )
+        .join("");
+    popup.document.write(
+      `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Comprovante WM Vendas</title><style>@page{size:A4;margin:12mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}html,body{background:#fff!important}body{margin:0;color:#35242b;font:14px Arial,sans-serif}.paper{max-width:760px;margin:auto;border:1px solid #eadbe1;border-radius:18px;overflow:hidden}.head{padding:24px;background:linear-gradient(135deg,#7b2448,#9e5572);color:#fff}.head h1{margin:0;font:28px Georgia,serif}.head p{margin:5px 0 0}.body{padding:24px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:22px}.meta div{padding:11px;border-radius:10px;background:#fbf4f7}.meta b,.meta span{display:block}.meta span{margin-top:3px;color:#715c65}table{width:100%;border-collapse:collapse;margin:12px 0 22px}th,td{padding:10px 8px;border-bottom:1px solid #eadbe1;text-align:left}th:last-child,td:last-child{text-align:right}.totals{margin-left:auto;width:min(100%,330px)}.totals div{display:flex;justify-content:space-between;padding:6px}.totals .grand{margin-top:6px;padding:12px;border-radius:10px;background:#f8eaf0;color:#7b2448;font-size:18px;font-weight:bold}.schedule{margin-top:24px}.foot{padding:18px 24px;background:#fff8fa;text-align:center;color:#715c65;font-size:12px}@media print{html,body{width:210mm;min-height:297mm}.paper{border:1px solid #eadbe1;box-shadow:none}.head,.meta div,.totals .grand,.foot{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}</style></head><body><main class="paper"><header class="head"><h1>WM Vendas</h1><p>Walquíria Maia - Comprovante de venda</p></header><section class="body"><div class="meta"><div><b>Cliente</b><span>${receiptHtml(receipt.customerName || "Cliente avulso")}</span></div><div><b>WhatsApp</b><span>${receiptHtml(receipt.customerPhone || "Não informado")}</span></div><div><b>Data</b><span>${new Date(receipt.soldAt).toLocaleString("pt-BR")}</span></div><div><b>Pagamento</b><span>${receiptHtml(receipt.paymentMethod)}${receipt.paymentMethod === "parcelado" ? ` - ${receipt.installments} parcelas` : ""}</span></div></div><h2>Produtos</h2><table><thead><tr><th>Produto</th><th>Preço unitário</th><th>Total</th></tr></thead><tbody>${itemRows}</tbody></table><div class="totals"><div><span>Subtotal</span><b>${money(receipt.subtotal)}</b></div><div><span>Desconto</span><b>${money(receipt.discount)}</b></div><div class="grand"><span>Total</span><b>${money(receipt.total)}</b></div></div>${installmentRows ? `<div class="schedule"><h2>Parcelas e vencimentos</h2><table><thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor</th></tr></thead><tbody>${installmentRows}</tbody></table></div>` : ""}</section><footer class="foot">Estoque, vendas e cobranças na palma da mão.<br>Documento gerado pelo WM Vendas.</footer></main><script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`,
+    );
+    popup.document.close();
+  }
+  if (receipt)
+    return (
+      <Dialog open={open} onOpenChange={(v) => !v && close()}>
+        <DialogContent className="express-sale-dialog">
+          <div className="sale-success">
+            <span>
+              <Check />
+            </span>
+            <small>
+              {receipt.offline ? "SALVA NO CELULAR" : "VENDA CONCLUÍDA"}
+            </small>
+            <h2>{money(receipt.total)}</h2>
+            <p>
+              {receipt.offline
+                ? "Aguardando internet para confirmar e baixar o estoque."
+                : "Estoque atualizado e venda registrada com segurança."}
+            </p>
+            <div className="receipt-customer">
+              <b>{receipt.customerName || "Cliente avulso"}</b>
+              <small>{receipt.customerPhone || "WhatsApp não informado"}</small>
+            </div>
+            <div className="receipt-lines">
+              {(receipt.items || []).map((i: any, index: number) => (
+                <div key={index}>
+                  <span>
+                    {i.quantity}x {i.name}
+                  </span>
+                  <b>{money(i.lineTotal)}</b>
+                </div>
+              ))}
+            </div>
+            {receipt.installmentDates?.length > 0 && (
+              <div className="receipt-installments">
+                <b>Parcelas e vencimentos</b>
+                {receipt.installmentDates.map((item: any) => (
+                  <div key={item.number}>
+                    <span>
+                      {item.number}ª -{" "}
+                      {new Date(`${item.dueDate}T12:00:00`).toLocaleDateString(
+                        "pt-BR",
+                      )}
+                    </span>
+                    <strong>{money(item.amount)}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Button className="receipt-pdf" onClick={printReceipt}>
+              <ReceiptText /> Gerar PDF / Imprimir
+            </Button>
+            {!receipt.offline && (
+              <a
+                className="receipt-whatsapp"
+                href={`https://wa.me/?text=${encodeURIComponent(receiptText())}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Share /> Enviar comprovante
+              </a>
+            )}
+            <Button variant="outline" onClick={close}>
+              Fechar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && close()}>
+      <DialogContent className="express-sale-dialog">
+        <DialogHeader>
+          <DialogTitle>Venda Expressa</DialogTitle>
+          <DialogDescription>
+            Leia o primeiro código ou monte a cesta com vários produtos.
+          </DialogDescription>
+        </DialogHeader>
+        {!data.products.length ? (
+          <div className="modal-empty">
+            <ShoppingBag />
+            Cadastre um produto antes da primeira venda.
+            <Button onClick={close}>Entendi</Button>
+          </div>
+        ) : (
+          <form onSubmit={send} className="express-sale-form">
+            <div className="express-picker">
+              <Select value={productId} onValueChange={setProductId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Escolha outro produto" />
+                </SelectTrigger>
+                <SelectContent>
+                  {data.products
+                    .filter((p) => p.stock > 0 && p.salePrice > 0)
+                    .map((p) => (
+                      <SelectItem key={p.id} value={String(p.id)}>
+                        {p.name} — {money(p.salePrice)}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <Button type="button" onClick={add} disabled={!selected}>
+                <Plus /> Adicionar
+              </Button>
+            </div>
+            <section className="express-cart">
+              {cart.map((item) => {
+                const p = data.products.find((x) => x.id === item.productId);
+                if (!p) return null;
+                return (
+                  <article key={item.productId}>
+                    {p.photoUrl ? (
+                      <img src={p.photoUrl} alt="" />
+                    ) : (
+                      <span className="express-thumb">
+                        <ShoppingBag />
+                      </span>
+                    )}
+                    <div>
+                      <b>{p.name}</b>
+                      <small>
+                        {money(p.salePrice)} · {p.stock} disponíveis
+                      </small>
+                    </div>
+                    <div className="express-qty">
+                      <button type="button" onClick={() => quantity(p.id, -1)}>
+                        −
+                      </button>
+                      <strong>{item.quantity}</strong>
+                      <button type="button" onClick={() => quantity(p.id, 1)}>
+                        +
+                      </button>
+                    </div>
+                    <strong>{money(p.salePrice * item.quantity)}</strong>
+                    <button
+                      type="button"
+                      className="express-remove"
+                      aria-label="Remover produto"
+                      onClick={() =>
+                        setCart((items) =>
+                          items.filter((i) => i.productId !== p.id),
+                        )
+                      }
+                    >
+                      <X />
+                    </button>
+                  </article>
+                );
+              })}
+              {!cart.length && (
+                <div className="express-empty">
+                  <ShoppingBag />
+                  <span>Adicione o primeiro produto à venda</span>
+                </div>
+              )}
+            </section>
+            <div className="express-total">
+              <span>Subtotal</span>
+              <strong>{money(subtotal)}</strong>
+            </div>
+            <div className="form">
+              <div className="field full">
+                <Label>Cliente</Label>
+                <Select name="customerId">
+                  <SelectTrigger>
+                    <SelectValue placeholder="Cliente avulso" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {data.customers.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="field">
+                <Label>Pagamento</Label>
+                <Select
+                  name="paymentMethod"
+                  value={payment}
+                  onValueChange={setPayment}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pix">PIX</SelectItem>
+                    <SelectItem value="dinheiro">Dinheiro</SelectItem>
+                    <SelectItem value="cartao">Cartão</SelectItem>
+                    <SelectItem value="parcelado">Parcelado / Fiado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="field">
+                <Label>Desconto (R$)</Label>
+                <Input
+                  name="discount"
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  max={subtotal}
+                  step="0.01"
+                  defaultValue="0"
+                />
+              </div>
+              {payment === "parcelado" && (
+                <>
+                  <div className="field">
+                    <Label>Parcelas</Label>
+                    <Input
+                      name="installments"
+                      type="number"
+                      min="1"
+                      max="12"
+                      defaultValue="2"
+                    />
+                  </div>
+                  <div className="field">
+                    <Label>Primeiro vencimento</Label>
+                    <Input
+                      name="dueDate"
+                      type="date"
+                      defaultValue={next.toISOString().slice(0, 10)}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="dialog-actions">
+              <Button type="button" variant="ghost" onClick={close}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={saving || !cart.length}>
+                {saving ? <Loader2 className="spin" /> : <CircleDollarSign />}{" "}
+                Concluir {money(subtotal)}
+              </Button>
+            </div>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+function DialogActions({
+  close,
+  saving,
+}: {
+  close: () => void;
+  saving: boolean;
+}) {
+  return (
+    <div className="dialog-actions">
+      <Button type="button" variant="ghost" onClick={close}>
+        Cancelar
+      </Button>
+      <Button type="submit" disabled={saving}>
+        {saving && <Loader2 className="spin" />} Salvar
+      </Button>
+    </div>
+  );
+}
+function ScannerDialog({
+  open,
+  close,
+  onCode,
+  purpose = "register",
+}: {
+  open: boolean;
+  close: () => void;
+  onCode: (c: string) => void;
+  purpose?: "register" | "sale";
+}) {
+  const video = useRef<HTMLVideoElement>(null),
+    handled = useRef(false);
+  const [message, setMessage] = useState(
+      purpose === "sale"
+        ? "Aponte para o código do produto"
+        : "Aponte para o código de barras",
+    ),
+    [manualCode, setManualCode] = useState("");
+  useEffect(() => {
+    let stream: MediaStream | undefined;
+    let timer: number | undefined;
+    handled.current = false;
+    setMessage(
+      purpose === "sale"
+        ? "Aponte para o código de barras ou QR Code"
+        : "Aponte para o código de barras ou QR Code",
+    );
+    if (open) {
+      navigator.mediaDevices
+        ?.getUserMedia({ video: { facingMode: "environment" } })
+        .then(async (s) => {
+          stream = s;
+          if (video.current) {
+            video.current.srcObject = s;
+            await video.current.play();
+          }
+          const Detector = (window as any).BarcodeDetector;
+          if (!Detector) {
+            setMessage(
+              "Leitura automática indisponível neste aparelho. Digite o código manualmente.",
+            );
+            return;
+          }
+          const detector = new Detector({
+            formats: [
+              "qr_code",
+              "ean_13",
+              "ean_8",
+              "code_128",
+              "code_39",
+              "itf",
+            ],
+          });
+          timer = window.setInterval(async () => {
+            if (!handled.current && video.current?.readyState === 4) {
+              const found = await detector
+                .detect(video.current)
+                .catch(() => []);
+              if (found[0]?.rawValue) {
+                handled.current = true;
+                onCode(found[0].rawValue);
+              }
+            }
+          }, 400);
+        })
+        .catch(() => setMessage("Permita o uso da câmera para ler o código."));
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+      stream?.getTracks().forEach((t) => t.stop());
+    };
+  }, [open, onCode, purpose]);
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && close()}>
+      <DialogContent className="scanner">
+        <DialogHeader>
+          <DialogTitle>
+            {purpose === "sale" ? "Vender com câmera" : "Escanear produto"}
+          </DialogTitle>
+          <DialogDescription>{message}</DialogDescription>
+        </DialogHeader>
+        <div className="camera">
+          <video ref={video} muted playsInline />
+          <span></span>
+          <Barcode />
+        </div>
+        <div className="scanner-manual">
+          <Input
+            value={manualCode}
+            onChange={(e) => setManualCode(e.target.value)}
+            inputMode="numeric"
+            placeholder="Ou digite o código"
+          />
+          <Button
+            type="button"
+            disabled={!manualCode.trim()}
+            onClick={() => onCode(manualCode.trim())}
+          >
+            Buscar
+          </Button>
+        </div>
+        <Button variant="outline" onClick={close}>
+          <X /> Fechar câmera
+        </Button>
+      </DialogContent>
+    </Dialog>
+  );
+}
