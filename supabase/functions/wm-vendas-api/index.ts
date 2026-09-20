@@ -24,8 +24,10 @@ async function getWmTenantId() {
 }
 async function getPublicTenantId(value:unknown){
   const slug=tenantSlug(String(value||WM_TENANT_SLUG))||WM_TENANT_SLUG;
-  const {data,error}=await db.from("wm_tenants").select("id").eq("slug",slug).eq("active",true).maybeSingle();
+  const {data,error}=await db.from("wm_tenants").select("id,subscription_status,trial_ends_at,grace_until").eq("slug",slug).eq("active",true).maybeSingle();
   if(error)throw error;if(!data)throw new Error("Loja não encontrada.");
+  const now=Date.now(),trialOk=data.subscription_status==="trialing"&&(!data.trial_ends_at||new Date(data.trial_ends_at).getTime()>=now),graceOk=data.subscription_status==="past_due"&&data.grace_until&&new Date(data.grace_until).getTime()>=now;
+  if(!["active"].includes(data.subscription_status)&&!trialOk&&!graceOk)throw new Error("Esta loja está temporariamente indisponível.");
   return data.id as string;
 }
 async function sha(value: string) {
@@ -45,6 +47,7 @@ async function requireSession(req: Request) {
   return data ? { id: data.id, tokenHash, tenantId: data.tenant_id as string, userId:data.user_id as string|null, memberId:data.member_id as string|null, role:data.role as string|null } : null;
 }
 function tenantSlug(value:string){return value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)}
+function tenantCanOperate(tenant:any){const now=Date.now();if(tenant?.subscription_status==="active")return true;if(tenant?.subscription_status==="trialing")return !tenant.trial_ends_at||new Date(tenant.trial_ends_at).getTime()>=now;if(tenant?.subscription_status==="past_due")return !!tenant.grace_until&&new Date(tenant.grace_until).getTime()>=now;return false}
 
 const sellerActions=new Set(["session_check","list","barcode_lookup","logout","create_customer","create_sale","create_express_sale","create_product","update_product","mark_paid","update_store_order_status"]);
 const viewerActions=new Set(["session_check","list","barcode_lookup","logout"]);
@@ -91,6 +94,8 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const action = String(body.action || "");
+
+    if(action==="signup_owner")return reply({error:"Novas lojas são liberadas pela administração. Entre em contato pelo WhatsApp (91) 98485-5557."},403);
 
     if (action === "public_catalog") {
       const tenantId = await getPublicTenantId(body.storeSlug);
@@ -204,8 +209,9 @@ Deno.serve(async (req) => {
       const {data:auth,error:authError}=await authClient.auth.signInWithPassword({email,password});
       await db.from("wm_login_attempts").insert({client_key:loginKey,succeeded:!authError&&!!auth.user});
       if(authError||!auth.user)return reply({error:"E-mail ou senha incorretos."},401);
-      const {data:member,error:memberError}=await db.from("wm_tenant_members").select("id,tenant_id,role,wm_tenants!inner(name,slug,active)").eq("user_id",auth.user.id).eq("active",true).eq("wm_tenants.active",true).limit(1).maybeSingle();
+      const {data:member,error:memberError}=await db.from("wm_tenant_members").select("id,tenant_id,role,wm_tenants!inner(name,slug,active,subscription_status,trial_ends_at,grace_until,subscription_due_at)").eq("user_id",auth.user.id).eq("active",true).eq("wm_tenants.active",true).limit(1).maybeSingle();
       if(memberError)throw memberError;if(!member)return reply({error:"Sua conta não está vinculada a uma loja ativa."},403);
+      if(!tenantCanOperate(member.wm_tenants))return reply({error:"Acesso temporariamente bloqueado. Entre em contato para regularizar sua mensalidade.",code:"SUBSCRIPTION_BLOCKED",whatsapp:"5591984855557",subscription:{status:member.wm_tenants?.subscription_status,dueAt:member.wm_tenants?.subscription_due_at}},402);
       const token=randomToken();await db.from("wm_sessions").insert({tenant_id:member.tenant_id,user_id:auth.user.id,member_id:member.id,role:member.role,token_hash:await sha(token),expires_at:new Date(Date.now()+30*86400_000).toISOString()});
       return reply({token,account:{tenantId:member.tenant_id,storeName:member.wm_tenants?.name,slug:member.wm_tenants?.slug,role:member.role,storeUrl:`/loja?loja=${member.wm_tenants?.slug}`}});
     }
@@ -229,9 +235,46 @@ Deno.serve(async (req) => {
     const sessionTenantId = session.tenantId;
     const sessionRole=session.role||"owner";
     if(!canRun(sessionRole,action))return reply({error:"Seu perfil não tem permissão para realizar esta ação."},403);
+    const wmTenantId=await getWmTenantId();
+    const platformAdmin=sessionTenantId===wmTenantId&&(sessionRole==="owner"||sessionRole==="admin");
+    const {data:billingTenant,error:billingError}=await db.from("wm_tenants").select("name,slug,owner_name,subscription_status,trial_ends_at,subscription_due_at,grace_until,monthly_price").eq("id",sessionTenantId).single();
+    if(billingError)throw billingError;
+    if(!platformAdmin&&!tenantCanOperate(billingTenant))return reply({error:"Acesso temporariamente bloqueado. Regularize sua mensalidade para continuar.",code:"SUBSCRIPTION_BLOCKED",whatsapp:"5591984855557",subscription:{status:billingTenant.subscription_status,dueAt:billingTenant.subscription_due_at}},402);
     if (action === "session_check") {
-      const {data:tenant}=await db.from("wm_tenants").select("name,slug,owner_name").eq("id",sessionTenantId).single();
-      return reply({authenticated:true,account:{tenantId:sessionTenantId,storeName:tenant?.name||"WM Vendas",slug:tenant?.slug||"wm-vendas",ownerName:tenant?.owner_name||"",role:session.role||"owner",hasIndividualLogin:!!session.userId,storeUrl:`/loja?loja=${tenant?.slug||"wm-vendas"}`}});
+      return reply({authenticated:true,account:{tenantId:sessionTenantId,storeName:billingTenant?.name||"WM Vendas",slug:billingTenant?.slug||"wm-vendas",ownerName:billingTenant?.owner_name||"",role:session.role||"owner",hasIndividualLogin:!!session.userId,isPlatformAdmin:platformAdmin,subscription:{status:billingTenant.subscription_status,dueAt:billingTenant.subscription_due_at,graceUntil:billingTenant.grace_until,monthlyPrice:Number(billingTenant.monthly_price||0)},storeUrl:`/loja?loja=${billingTenant?.slug||"wm-vendas"}`}});
+    }
+    if(action==="platform_list_tenants"){
+      if(!platformAdmin)return reply({error:"Acesso exclusivo da administração WM Vendas."},403);
+      const {data:tenants,error}=await db.from("wm_tenants").select("id,slug,name,owner_name,owner_phone,plan_code,subscription_status,trial_ends_at,subscription_due_at,grace_until,monthly_price,billing_notes,active,created_at,wm_tenant_members(email,active)").order("created_at",{ascending:false});
+      if(error)throw error;
+      return reply({tenants:(tenants||[]).map((tenant:any)=>({...tenant,monthlyPrice:Number(tenant.monthly_price||0),ownerEmail:(tenant.wm_tenant_members||[]).find((member:any)=>member.active)?.email||""}))});
+    }
+    if(action==="platform_create_tenant"){
+      if(!platformAdmin)return reply({error:"Acesso exclusivo da administração WM Vendas."},403);
+      const email=String(body.email||"").trim().toLowerCase(),password=String(body.password||""),ownerName=String(body.ownerName||"").trim(),storeName=String(body.storeName||"").trim(),phone=String(body.phone||"").trim(),monthlyPrice=Math.max(0,Number(body.monthlyPrice||0)),dueAt=String(body.dueAt||"")||null,planCode=String(body.planCode||"essencial").slice(0,30);
+      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||password.length<8||ownerName.length<2||storeName.length<2)return reply({error:"Informe loja, responsável, e-mail válido e senha com pelo menos 8 caracteres."},400);
+      let slug=tenantSlug(String(body.slug||storeName));if(slug.length<3)return reply({error:"O endereço da loja precisa ter pelo menos 3 caracteres."},400);
+      const {data:existing}=await db.from("wm_tenants").select("id").eq("slug",slug).maybeSingle();if(existing)slug=`${slug}-${crypto.randomUUID().slice(0,5)}`;
+      const {data:created,error:createError}=await db.auth.admin.createUser({email,password,email_confirm:true,user_metadata:{name:ownerName}});if(createError)return reply({error:createError.message.includes("already")?"Este e-mail já possui uma conta.":"Não foi possível criar o acesso."},400);
+      const userId=created.user?.id;if(!userId)return reply({error:"Não foi possível criar o acesso."},500);let tenantId="";
+      try{
+        const graceUntil=dueAt?new Date(new Date(dueAt+"T23:59:59Z").getTime()+3*86400_000).toISOString():null;
+        const {data:tenant,error:tenantError}=await db.from("wm_tenants").insert({slug,name:storeName,owner_name:ownerName,owner_phone:phone,plan_code:planCode,subscription_status:"active",monthly_price:monthlyPrice,subscription_due_at:dueAt?dueAt+"T23:59:59Z":null,grace_until:graceUntil,limits:{users:5,products:500,customers:500,monthly_orders:1000}}).select("id").single();if(tenantError)throw tenantError;tenantId=tenant.id;
+        const {data:member,error:memberError}=await db.from("wm_tenant_members").insert({tenant_id:tenantId,user_id:userId,name:ownerName,email,role:"owner",active:true}).select("id").single();if(memberError)throw memberError;
+        const {error:settingsError}=await db.from("wm_store_settings").insert({tenant_id:tenantId,store_name:storeName,pix_holder_name:ownerName,whatsapp:phone,store_enabled:true});if(settingsError)throw settingsError;
+        await audit(session,"platform.tenant_created","tenant",tenantId,{email,storeName,monthlyPrice,dueAt});
+        return reply({message:"Lojista criado com acesso liberado.",tenant:{id:tenantId,slug,email,storeUrl:`/loja?loja=${slug}`}},201);
+      }catch(error){if(tenantId)await db.from("wm_tenants").delete().eq("id",tenantId);await db.auth.admin.deleteUser(userId);throw error}
+    }
+    if(action==="platform_update_tenant"){
+      if(!platformAdmin)return reply({error:"Acesso exclusivo da administração WM Vendas."},403);
+      const id=String(body.id||""),status=String(body.status||"");if(!id||!["trialing","active","past_due","suspended","cancelled"].includes(status))return reply({error:"Loja ou situação inválida."},400);if(id===wmTenantId&&status!=="active")return reply({error:"A loja principal WM Vendas não pode ser bloqueada."},400);
+      const dueAt=String(body.dueAt||"")||null,graceDays=Math.max(0,Math.min(30,Number(body.graceDays||3))),monthlyPrice=Math.max(0,Number(body.monthlyPrice||0));
+      const graceUntil=dueAt?new Date(new Date(dueAt+"T23:59:59Z").getTime()+graceDays*86400_000).toISOString():null;
+      const {error}=await db.from("wm_tenants").update({plan_code:String(body.planCode||"essencial").slice(0,30),subscription_status:status,monthly_price:monthlyPrice,subscription_due_at:dueAt?dueAt+"T23:59:59Z":null,grace_until:graceUntil,blocked_at:["suspended","cancelled"].includes(status)?new Date().toISOString():null,billing_notes:String(body.notes||"").slice(0,500),updated_at:new Date().toISOString()}).eq("id",id);if(error)throw error;
+      if(["suspended","cancelled"].includes(status))await db.from("wm_sessions").delete().eq("tenant_id",id);
+      await audit(session,"platform.subscription_updated","tenant",id,{status,monthlyPrice,dueAt,graceDays});
+      return reply({message:status==="active"?"Acesso liberado com sucesso.":status==="past_due"?"Loja marcada como pagamento pendente.":"Acesso da loja atualizado."});
     }
     if(action==="team_list"){
       const [{data:tenant,error:tenantError},{data:members,error},{data:sessions,error:sessionsError},{data:events,error:eventsError}]=await Promise.all([
@@ -445,7 +488,7 @@ Deno.serve(async (req) => {
         db.from("wm_sales").select("customer_id,total,cost_total").eq("tenant_id",sessionTenantId),
         db.from("wm_receivables").select("customer_id,amount,due_date,status,paid_at").eq("tenant_id",sessionTenantId),
         db.from("wm_supplier_bills").select("id,supplier_name,description,amount,due_date,barcode_line,status").eq("tenant_id",sessionTenantId).order("due_date"),
-        db.from("wm_tenants").select("name,slug,owner_name").eq("id",sessionTenantId).single()
+        db.from("wm_tenants").select("name,slug,owner_name,subscription_status,subscription_due_at,grace_until,monthly_price").eq("id",sessionTenantId).single()
       ]);
       for (const result of [pr, cr, rr, sr, ar, br, tr]) if (result.error) throw result.error;
       const products = pr.data || [], sales = sr.data || [], today = new Date().toISOString().slice(0, 10);
@@ -467,7 +510,7 @@ Deno.serve(async (req) => {
         if(!signedError) for(const item of signedPhotos||[]) if(item.path&&item.signedUrl)signedByPath.set(item.path,item.signedUrl);
       }
       return reply({
-        account:{tenantId:sessionTenantId,storeName:tr.data?.name||"WM Vendas",slug:tr.data?.slug||"wm-vendas",ownerName:tr.data?.owner_name||"",role:session.role||"owner",hasIndividualLogin:!!session.userId,storeUrl:`/loja?loja=${tr.data?.slug||"wm-vendas"}`},
+        account:{tenantId:sessionTenantId,storeName:tr.data?.name||"WM Vendas",slug:tr.data?.slug||"wm-vendas",ownerName:tr.data?.owner_name||"",role:session.role||"owner",hasIndividualLogin:!!session.userId,isPlatformAdmin:platformAdmin,subscription:{status:tr.data?.subscription_status,dueAt:tr.data?.subscription_due_at,graceUntil:tr.data?.grace_until,monthlyPrice:Number(tr.data?.monthly_price||0)},storeUrl:`/loja?loja=${tr.data?.slug||"wm-vendas"}`},
         products:products.map((p:any)=>({id:p.id,barcode:p.barcode,name:p.name,brand:p.brand,costPrice:Number(p.cost_price),salePrice:Number(p.sale_price),stock:p.stock,photoUrl:p.photo_path?signedByPath.get(p.photo_path)||null:p.catalog_image_url||null})),
         customers:(cr.data||[]).map((c:any)=>{const stat=statsFor(c.id);const loyaltyLevel=stat.totalPurchased>=3000?"Diamante":stat.totalPurchased>=1500?"Ouro":stat.totalPurchased>=500?"Prata":stat.totalPurchased>0?"Bronze":"Novo";const paymentStatus=stat.purchaseCount===0?"Novo":stat.overdueCount>0?"Em atraso":stat.latePayments>0?"Atenção":"Em dia";return {id:c.id,name:c.name,phone:c.phone,...stat,loyaltyLevel,paymentStatus}}),
         charges,

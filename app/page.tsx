@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Barcode, Bell, Box, CalendarClock, Camera, Check, ChevronRight, CircleDollarSign, Download, Home, ImagePlus, Loader2, LockKeyhole, LogOut, PackagePlus, Pencil, Plus, ReceiptText, Search, Send, Share, ShoppingBag, Smartphone, Sparkles, Store, TrendingUp, UserPlus, Users, Wallet, X } from "lucide-react";
+import { AlertCircle, Barcode, Bell, Box, Building2, CalendarClock, Camera, Check, ChevronRight, CircleDollarSign, Download, Home, ImagePlus, Loader2, LockKeyhole, LogOut, PackagePlus, Pencil, Plus, ReceiptText, Search, Send, Share, ShoppingBag, Smartphone, Sparkles, Store, TrendingUp, UserPlus, Users, Wallet, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StoreAdmin } from "./store-admin";
 import { TeamView } from "./team";
+import { PlatformAdmin } from "./platform-admin";
 
 type Product = { id:number; barcode:string; name:string; brand:string; costPrice:number; salePrice:number; stock:number; photoUrl?:string|null };
 type Customer = { id:number; name:string; phone:string; totalPurchased:number; purchaseCount:number; pendingBalance:number; overdueCount:number; latePayments:number; loyaltyLevel:"Novo"|"Bronze"|"Prata"|"Ouro"|"Diamante"; paymentStatus:"Novo"|"Em dia"|"Atenção"|"Em atraso" };
@@ -19,7 +20,7 @@ type CashEntry = { id:number|string; kind:"income"|"expense"|"pending"; category
 type SaleReceipt = { receiptCode:string; customerName:string; customerPhone:string; subtotal:number; discount:number; total:number; paymentMethod:string; installments:number; soldAt:string; items:{name:string;quantity:number;unitPrice:number;lineTotal:number}[]; installmentDates:{number:number;dueDate:string;amount:number;status:string}[] };
 type FinanceReport = { startDate:string; summary:{ income:number; expenses:number; balance:number; sales:number; outstanding:number; costOfGoods:number; estimatedProfit:number }; entries:CashEntry[]; receipts:SaleReceipt[] };
 type Dashboard = { investment:number; expectedRevenue:number; expectedProfit:number; salesTotal:number; received:number; pending:number; overdueCount:number; supplierPendingTotal:number; supplierDueSoonCount:number; supplierOverdueCount:number };
-type Account = { tenantId:string; storeName:string; slug:string; ownerName:string; role:string; hasIndividualLogin:boolean; storeUrl:string };
+type Account = { tenantId:string; storeName:string; slug:string; ownerName:string; role:string; hasIndividualLogin:boolean; isPlatformAdmin?:boolean; storeUrl:string };
 type Data = { products:Product[]; customers:Customer[]; charges:Charge[]; supplierBills:SupplierBill[]; dashboard:Dashboard; account?:Account };
 const money = (v:number) => new Intl.NumberFormat("pt-BR", { style:"currency", currency:"BRL" }).format(v || 0);
 const dateBR = (v:string) => new Intl.DateTimeFormat("pt-BR", { day:"2-digit", month:"short" }).format(new Date(`${v}T12:00:00`));
@@ -96,7 +97,7 @@ export default function HomePage() {
     }catch(e){setModal(null);notify(e instanceof Error?e.message:"Não foi possível consultar este produto.")}
   }
   const role=data.account?.role||"owner",canManage=role==="owner"||role==="admin";
-  const items:[string,any,string][]=[["inicio",Home,"Início"],["produtos",ShoppingBag,"Produtos"],["vendas",CircleDollarSign,"Vendas"],["clientes",Users,"Clientes"],["cobrancas",Bell,"Cobranças"],...(canManage?([["fornecedores",ReceiptText,"Boletos"],["financeiro",Wallet,"Caixa"],["loja",Store,"Loja"],["equipe",UserPlus,"Equipe"]] as [string,any,string][]):[])];
+  const items:[string,any,string][]=[["inicio",Home,"Início"],["produtos",ShoppingBag,"Produtos"],["vendas",CircleDollarSign,"Vendas"],["clientes",Users,"Clientes"],["cobrancas",Bell,"Cobranças"],...(canManage?([["fornecedores",ReceiptText,"Boletos"],["financeiro",Wallet,"Caixa"],["loja",Store,"Loja"],["equipe",UserPlus,"Equipe"]] as [string,any,string][]):[]),...(data.account?.isPlatformAdmin?([["plataforma",Building2,"Lojistas"]] as [string,any,string][]):[])];
   if(!authenticated)return <LoginScreen login={login} loading={saving}/>;
   return <main className="min-h-screen pb-24 lg:pb-8">
     <header className="topbar"><div className="brand"><span className="brand-mark">{(data.account?.storeName||"WM").split(/\s+/).map(x=>x[0]).join("").slice(0,2).toUpperCase()}</span><div><strong>{data.account?.storeName||"WM Vendas"}</strong><small>{data.account?.ownerName||"Walquíria Maia"}</small></div></div><div className="top-actions">{offlineCount>0&&<span className="offline-badge"><span>{offlineCount}</span> pendente(s)</span>}<InstallButton compact/><button className="icon-btn" aria-label="Sair" onClick={logout}><LogOut/></button><button className="icon-btn" aria-label="Central de alertas" onClick={()=>setView("alertas")}><Bell/><i>{alertCount}</i></button></div></header>
@@ -113,6 +114,7 @@ export default function HomePage() {
         {view==="financeiro"&&<FinanceView api={api} notify={notify}/>} 
         {view==="loja"&&<StoreAdmin api={api} notify={notify}/>} 
         {view==="equipe"&&canManage&&<TeamView api={api} notify={notify} currentRole={role} hasIndividualLogin={!!data.account?.hasIndividualLogin}/>} 
+        {view==="plataforma"&&data.account?.isPlatformAdmin&&<PlatformAdmin api={api} notify={notify}/>} 
       </>}</section>
     </div>
     <nav className="bottom-nav">{items.map(([id,Icon,label])=><button key={id} className={view===id?"active":""} onClick={()=>id==="vendas"?openSale(true):setView(id)}><Icon/><span>{id==="cobrancas"?"Cobrar":label}</span></button>)}</nav>
@@ -127,12 +129,11 @@ export default function HomePage() {
 }
 
 function LoginScreen({login,loading}:{login:(action:string,payload:Record<string,unknown>)=>Promise<void>;loading:boolean}){
-  const [mode,setMode]=useState<"email"|"signup"|"pin">("email"),[error,setError]=useState("");
-  async function send(e:FormEvent<HTMLFormElement>){e.preventDefault();setError("");const values=Object.fromEntries(new FormData(e.currentTarget));try{await login(mode==="signup"?"signup_owner":mode==="pin"?"login":"email_login",values)}catch(err){setError(err instanceof Error?err.message:"Não foi possível entrar")}}
-  return <main className="login-page"><section className="login-card multi-login"><span className="login-mark">WM</span><small>GESTÃO E LOJA VIRTUAL</small><h1>{mode==="signup"?"Crie sua loja":mode==="pin"?"Acesso WM Vendas":"Entre na sua conta"}</h1><p>{mode==="signup"?"Sua marca, seus produtos e seus clientes em um espaço independente.":mode==="pin"?"Acesso de 6 números da Walquíria.":"Acesse a gestão exclusiva da sua empresa."}</p><div className="login-modes"><button type="button" className={mode==="email"?"active":""} onClick={()=>{setMode("email");setError("")}}>E-mail</button><button type="button" className={mode==="signup"?"active":""} onClick={()=>{setMode("signup");setError("")}}>Criar loja</button><button type="button" className={mode==="pin"?"active":""} onClick={()=>{setMode("pin");setError("")}}>PIN antigo</button></div><form onSubmit={send}>
-    {mode==="signup"&&<><Label>Seu nome</Label><Input name="ownerName" required autoComplete="name" placeholder="Nome do proprietário"/><Label>Nome da sua marca</Label><Input name="storeName" required placeholder="Ex.: Bella Cosméticos"/><Label>WhatsApp</Label><Input name="phone" inputMode="tel" autoComplete="tel" placeholder="(91) 99999-9999"/></>}
-    {mode==="pin"?<><Label htmlFor="pin">PIN de acesso</Label><div className="pin-field"><LockKeyhole/><Input id="pin" name="pin" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="current-password" placeholder="••••••" required autoFocus/></div></>:<><Label htmlFor="email">E-mail</Label><Input id="email" name="email" type="email" autoComplete="email" required autoFocus placeholder="voce@exemplo.com"/><Label htmlFor="password">Senha</Label><Input id="password" name="password" type="password" minLength={8} autoComplete={mode==="signup"?"new-password":"current-password"} required placeholder="Mínimo de 8 caracteres"/></>}
-    {error&&<span className="login-error"><AlertCircle/>{error}</span>}<Button type="submit" disabled={loading}>{loading?<Loader2 className="spin"/>:<LockKeyhole/>} {mode==="signup"?"Criar minha loja":"Entrar"}</Button></form><footer>{mode==="signup"?"14 dias para experimentar. Cada loja mantém seus dados separados.":"Seus dados ficam protegidos e sincronizados."}</footer></section></main>
+  const [mode,setMode]=useState<"email"|"pin">("email"),[error,setError]=useState("");
+  async function send(e:FormEvent<HTMLFormElement>){e.preventDefault();setError("");const values=Object.fromEntries(new FormData(e.currentTarget));try{await login(mode==="pin"?"login":"email_login",values)}catch(err){setError(err instanceof Error?err.message:"Não foi possível entrar")}}
+  return <main className="login-page"><section className="login-card multi-login"><span className="login-mark">WM</span><small>GESTÃO E LOJA VIRTUAL</small><h1>{mode==="pin"?"Acesso WM Vendas":"Entre na sua conta"}</h1><p>{mode==="pin"?"Acesso de 6 números da Walquíria.":"Acesse a gestão exclusiva da sua empresa."}</p><div className="login-modes"><button type="button" className={mode==="email"?"active":""} onClick={()=>{setMode("email");setError("")}}>E-mail e senha</button><button type="button" className={mode==="pin"?"active":""} onClick={()=>{setMode("pin");setError("")}}>PIN antigo</button></div><form onSubmit={send}>
+    {mode==="pin"?<><Label htmlFor="pin">PIN de acesso</Label><div className="pin-field"><LockKeyhole/><Input id="pin" name="pin" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="current-password" placeholder="••••••" required autoFocus/></div></>:<><Label htmlFor="email">E-mail</Label><Input id="email" name="email" type="email" autoComplete="email" required autoFocus placeholder="voce@exemplo.com"/><Label htmlFor="password">Senha</Label><Input id="password" name="password" type="password" minLength={8} autoComplete="current-password" required placeholder="Mínimo de 8 caracteres"/></>}
+    {error&&<span className="login-error"><AlertCircle/>{error}</span>}<Button type="submit" disabled={loading}>{loading?<Loader2 className="spin"/>:<LockKeyhole/>} Entrar</Button></form><a className="login-contact" href="https://wa.me/5591984855557?text=Ol%C3%A1%21%20Quero%20ter%20minha%20pr%C3%B3pria%20loja%20online%20no%20WM%20Vendas." target="_blank" rel="noreferrer"><Store/> Quero minha própria loja online</a><footer>Novos acessos são criados pela administração. Seus dados ficam protegidos e separados.</footer></section></main>
 }
 
 function PageTitle({eyebrow,title,action}:{eyebrow:string;title:string;action?:React.ReactNode}){return <div className="page-title"><div><small>{eyebrow}</small><h1>{title}</h1></div>{action}</div>}

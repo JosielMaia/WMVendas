@@ -5,6 +5,7 @@ const ADMIN_ACTIONS = new Set([
   "create_customer", "create_sale", "create_express_sale", "mark_paid", "create_supplier_bill",
   "mark_supplier_bill_paid",
   "team_list", "create_team_member", "update_team_member", "change_password",
+  "platform_list_tenants", "platform_create_tenant", "platform_update_tenant",
 ]);
 
 export const runtime = "nodejs";
