@@ -90,6 +90,51 @@ type Charge = {
   status: string;
   installmentNumber: number;
 };
+type CustomerPayment = {
+  paymentId: number;
+  receivableId: number;
+  saleId: number | null;
+  installmentNumber: number | null;
+  installmentAmount: number;
+  paidAmount: number;
+  paidTotal: number;
+  remainingAmount: number;
+  dueDate: string;
+  paidAt: string;
+  paymentMethod: string;
+  notes: string;
+  entryType: string;
+};
+type CustomerHistory = {
+  customer: { id: number; name: string; phone: string };
+  summary: {
+    totalPurchased: number;
+    totalPaid: number;
+    openBalance: number;
+    purchasesCount: number;
+    pendingInstallments: number;
+  };
+  installments: Array<{
+    id: number;
+    saleId: number;
+    installmentNumber: number;
+    amount: number;
+    paidAmount: number;
+    remainingAmount: number;
+    dueDate: string;
+    status: string;
+    paidAt?: string | null;
+  }>;
+  payments: CustomerPayment[];
+  purchases: Array<{
+    saleId: number;
+    total: number;
+    soldAt: string;
+    paymentMethod: string;
+    installments: number;
+    receiptCode?: string | null;
+  }>;
+};
 type PaymentReceipt = {
   paymentId: number;
   cashEntryId: number;
@@ -293,6 +338,7 @@ export default function HomePage() {
     [saving, setSaving] = useState(false);
   const [saleProductId, setSaleProductId] = useState<string>("");
   const [paymentReceipt, setPaymentReceipt] = useState<PaymentReceipt | null>(null);
+  const [customerHistory, setCustomerHistory] = useState<CustomerHistory | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [search, setSearch] = useState(""),
     [toast, setToast] = useState(""),
@@ -690,6 +736,14 @@ export default function HomePage() {
                 <CustomersView
                   customers={data.customers}
                   open={() => setModal("customer")}
+                  openHistory={async (customer) => {
+                    try {
+                      const j = await api("customer_history", { customerId: customer.id });
+                      setCustomerHistory(j as CustomerHistory);
+                    } catch (e) {
+                      notify(e instanceof Error ? e.message : "Não foi possível carregar o histórico.");
+                    }
+                  }}
                 />
               )}
               {view === "vendas" && (
@@ -787,6 +841,32 @@ export default function HomePage() {
         saving={saving}
       />
       <PaymentReceiptDialog receipt={paymentReceipt} close={() => setPaymentReceipt(null)} />
+      <CustomerHistoryDialog
+        history={customerHistory}
+        close={() => setCustomerHistory(null)}
+        openReceipt={(payment) => {
+          const h = customerHistory;
+          if (!h) return;
+          setPaymentReceipt({
+            paymentId: payment.paymentId,
+            cashEntryId: 0,
+            receivableId: payment.receivableId,
+            saleId: payment.saleId || 0,
+            customerId: h.customer.id,
+            customerName: h.customer.name,
+            customerPhone: h.customer.phone,
+            installmentNumber: payment.installmentNumber || 0,
+            installmentAmount: payment.installmentAmount,
+            paidAmount: payment.paidAmount,
+            paidTotal: payment.paidTotal,
+            remainingAmount: payment.remainingAmount,
+            dueDate: payment.dueDate,
+            paidAt: payment.paidAt,
+            paymentMethod: payment.paymentMethod,
+            status: payment.remainingAmount > 0 ? "pending" : "paid",
+          });
+        }}
+      />
       <ScannerDialog
         open={modal === "scanner"}
         close={() => setModal("product")}
@@ -1483,9 +1563,11 @@ function ProductsView({
 function CustomersView({
   customers,
   open,
+  openHistory,
 }: {
   customers: Customer[];
   open: () => void;
+  openHistory: (customer: Customer) => void;
 }) {
   return (
     <>
@@ -1560,6 +1642,14 @@ function CustomersView({
                     : "parcelas vencidas"}
                 </p>
               )}
+              <Button
+                type="button"
+                variant="outline"
+                className="customer-history-button"
+                onClick={() => openHistory(c)}
+              >
+                <ReceiptText /> Histórico financeiro
+              </Button>
             </article>
           );
         })}
@@ -1570,6 +1660,105 @@ function CustomersView({
         )}
       </section>
     </>
+  );
+}
+function CustomerHistoryDialog({
+  history,
+  close,
+  openReceipt,
+}: {
+  history: CustomerHistory | null;
+  close: () => void;
+  openReceipt: (payment: CustomerPayment) => void;
+}) {
+  const [tab, setTab] = useState("resumo");
+  const methodLabels: Record<string, string> = {
+    dinheiro: "Dinheiro",
+    pix: "PIX",
+    cartao: "Cartão",
+    transferencia: "Transferência",
+    outro: "Outro",
+  };
+  return (
+    <Dialog open={!!history} onOpenChange={(open) => !open && close()}>
+      <DialogContent className="customer-history-dialog">
+        <DialogHeader>
+          <DialogTitle>Histórico financeiro</DialogTitle>
+          <DialogDescription>
+            {history ? history.customer.name + (history.customer.phone ? " • " + history.customer.phone : "") : ""}
+          </DialogDescription>
+        </DialogHeader>
+        {history && (
+          <>
+            <div className="stats mini">
+              <article className="stat"><small>Total comprado</small><strong>{money(history.summary.totalPurchased)}</strong></article>
+              <article className="stat"><small>Total recebido</small><strong>{money(history.summary.totalPaid)}</strong></article>
+              <article className="stat"><small>Em aberto</small><strong>{money(history.summary.openBalance)}</strong></article>
+            </div>
+            <Tabs value={tab} onValueChange={setTab}>
+              <TabsList>
+                <TabsTrigger value="resumo">Parcelas</TabsTrigger>
+                <TabsTrigger value="pagamentos">Pagamentos</TabsTrigger>
+                <TabsTrigger value="compras">Compras</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <section className="panel list-panel customer-history-list">
+              {tab === "resumo" && (
+                <>
+                  {history.installments.map((item) => (
+                    <div className="history-row" key={item.id}>
+                      <div>
+                        <b>Parcela {item.installmentNumber}</b>
+                        <small>Vencimento {dateBR(item.dueDate)} • {item.status === "paid" ? "Quitada" : "Em aberto"}</small>
+                      </div>
+                      <div className="history-values">
+                        <strong>{money(item.paidAmount)}</strong>
+                        <small>de {money(item.amount)}</small>
+                      </div>
+                      <span className={item.remainingAmount > 0 ? "payment-status warning" : "payment-status good"}>
+                        {item.remainingAmount > 0 ? "Saldo " + money(item.remainingAmount) : "Quitada"}
+                      </span>
+                    </div>
+                  ))}
+                  {!history.installments.length && <Empty icon={ReceiptText} text="Este cliente ainda não possui parcelas." />}
+                </>
+              )}
+              {tab === "pagamentos" && (
+                <>
+                  {history.payments.map((payment) => (
+                    <div className="history-row" key={payment.paymentId}>
+                      <div>
+                        <b>{money(payment.paidAmount)} • Parcela {payment.installmentNumber}</b>
+                        <small>{new Date(payment.paidAt).toLocaleDateString("pt-BR")} • {methodLabels[payment.paymentMethod] || payment.paymentMethod}</small>
+                        {payment.notes && <small>{payment.notes}</small>}
+                      </div>
+                      <Button variant="outline" onClick={() => openReceipt(payment)}>
+                        <ReceiptText /> Recibo
+                      </Button>
+                    </div>
+                  ))}
+                  {!history.payments.length && <Empty icon={ReceiptText} text="Nenhum pagamento registrado." />}
+                </>
+              )}
+              {tab === "compras" && (
+                <>
+                  {history.purchases.map((purchase) => (
+                    <div className="history-row" key={purchase.saleId}>
+                      <div>
+                        <b>Venda #{purchase.saleId}</b>
+                        <small>{new Date(purchase.soldAt).toLocaleDateString("pt-BR")} • {purchase.installments > 1 ? purchase.installments + " parcelas" : purchase.paymentMethod}</small>
+                      </div>
+                      <strong>{money(purchase.total)}</strong>
+                    </div>
+                  ))}
+                  {!history.purchases.length && <Empty icon={CircleDollarSign} text="Nenhuma compra registrada." />}
+                </>
+              )}
+            </section>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 function SalesView({
