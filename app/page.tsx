@@ -2027,8 +2027,9 @@ function PaymentReceiptDialog({
   close: () => void;
 }) {
   if (!receipt) return null;
-  const paidDate = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(receipt.paidAt));
-  const dueDate = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(receipt.dueDate + "T12:00:00"));
+  const currentReceipt = receipt;
+  const paidDate = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(currentReceipt.paidAt));
+  const dueDate = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(currentReceipt.dueDate + "T12:00:00"));
   const methodLabels: Record<string, string> = {
     dinheiro: "Dinheiro",
     pix: "PIX",
@@ -2036,27 +2037,27 @@ function PaymentReceiptDialog({
     transferencia: "Transferência",
     outro: "Outro",
   };
-  const receiptCode = `WM-${String(receipt.paymentId).padStart(6, "0")}`;
+  const receiptCode = `WM-${String(currentReceipt.paymentId).padStart(6, "0")}`;
   const message = [
     "🧾 RECIBO DE PAGAMENTO — WM Vendas",
     `Recibo: ${receiptCode}`,
-    `Cliente: ${receipt.customerName}`,
-    `Parcela: ${receipt.installmentNumber}`,
-    `Valor recebido: ${money(receipt.paidAmount)}`,
-    `Forma de pagamento: ${methodLabels[receipt.paymentMethod] || receipt.paymentMethod}`,
+    `Cliente: ${currentReceipt.customerName}`,
+    `Parcela: ${currentReceipt.installmentNumber}`,
+    `Valor recebido: ${money(currentReceipt.paidAmount)}`,
+    `Forma de pagamento: ${methodLabels[currentReceipt.paymentMethod] || currentReceipt.paymentMethod}`,
     `Vencimento original: ${dueDate}`,
     `Pagamento recebido em: ${paidDate}`,
-    receipt.remainingAmount > 0 ? `Saldo restante: ${money(receipt.remainingAmount)}` : "Parcela quitada.",
+    currentReceipt.remainingAmount > 0 ? `Saldo restante: ${money(currentReceipt.remainingAmount)}` : "Parcela quitada.",
     "Obrigada pela preferência! — WM Vendas",
   ].join("\n");
-  const whatsapp = receipt.customerPhone
-    ? `https://wa.me/55${receipt.customerPhone.replace(/\\D/g, "")}?text=${encodeURIComponent(message)}`
+  const whatsapp = currentReceipt.customerPhone
+    ? `https://wa.me/55${currentReceipt.customerPhone.replace(/\\D/g, "")}?text=${encodeURIComponent(message)}`
     : `https://wa.me/?text=${encodeURIComponent(message)}`;
 
   function printReceipt() {
     const win = window.open("", "_blank", "width=480,height=720");
     if (!win) return;
-    win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Recibo ${receiptCode}</title><style>body{font-family:Arial,sans-serif;padding:28px;max-width:420px;margin:auto;color:#222}h1{font-size:20px;margin-bottom:4px}.muted{color:#666;font-size:12px}.box{border:1px solid #ddd;border-radius:12px;padding:16px;margin-top:18px}.row{display:flex;justify-content:space-between;gap:18px;padding:8px 0;border-bottom:1px solid #eee}.row:last-child{border-bottom:0}.total{font-size:22px;font-weight:700}.footer{text-align:center;margin-top:22px;font-size:12px;color:#666}</style></head><body><h1>WM Vendas</h1><div class="muted">Recibo de pagamento • ${receiptCode}</div><div class="box"><div class="row"><span>Cliente</span><b>${receipt.customerName}</b></div><div class="row"><span>Parcela</span><b>${receipt.installmentNumber}</b></div><div class="row"><span>Vencimento original</span><b>${dueDate}</b></div><div class="row"><span>Pagamento</span><b>${paidDate}</b></div><div class="row"><span>Forma</span><b>${methodLabels[receipt.paymentMethod] || receipt.paymentMethod}</b></div><div class="row"><span>Valor recebido</span><b class="total">${money(receipt.paidAmount)}</b></div>${receipt.remainingAmount > 0 ? `<div class="row"><span>Saldo restante</span><b>${money(receipt.remainingAmount)}</b></div>` : `<div class="row"><span>Status</span><b>PARCELA QUITADA</b></div>`}</div><div class="footer">Obrigada pela preferência!<br>WM Vendas</div><script>window.onload=()=>{window.print();setTimeout(()=>window.close(),400)}</script></body></html>`);
+    win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Recibo ${receiptCode}</title><style>body{font-family:Arial,sans-serif;padding:28px;max-width:420px;margin:auto;color:#222}h1{font-size:20px;margin-bottom:4px}.muted{color:#666;font-size:12px}.box{border:1px solid #ddd;border-radius:12px;padding:16px;margin-top:18px}.row{display:flex;justify-content:space-between;gap:18px;padding:8px 0;border-bottom:1px solid #eee}.row:last-child{border-bottom:0}.total{font-size:22px;font-weight:700}.footer{text-align:center;margin-top:22px;font-size:12px;color:#666}</style></head><body><h1>WM Vendas</h1><div class="muted">Recibo de pagamento • ${receiptCode}</div><div class="box"><div class="row"><span>Cliente</span><b>${currentReceipt.customerName}</b></div><div class="row"><span>Parcela</span><b>${currentReceipt.installmentNumber}</b></div><div class="row"><span>Vencimento original</span><b>${dueDate}</b></div><div class="row"><span>Pagamento</span><b>${paidDate}</b></div><div class="row"><span>Forma</span><b>${methodLabels[currentReceipt.paymentMethod] || currentReceipt.paymentMethod}</b></div><div class="row"><span>Valor recebido</span><b class="total">${money(currentReceipt.paidAmount)}</b></div>${currentReceipt.remainingAmount > 0 ? `<div class="row"><span>Saldo restante</span><b>${money(currentReceipt.remainingAmount)}</b></div>` : `<div class="row"><span>Status</span><b>PARCELA QUITADA</b></div>`}</div><div class="footer">Obrigada pela preferência!<br>WM Vendas</div><script>window.onload=()=>{window.print();setTimeout(()=>window.close(),400)}</script></body></html>`);
     win.document.close();
   }
 
@@ -2098,13 +2099,13 @@ function PaymentReceiptDialog({
               </div>
             </div>
             <div className="receipt-lines">
-              <div><span>Cliente</span><b>{receipt.customerName}</b></div>
-              <div><span>Parcela</span><b>{receipt.installmentNumber}</b></div>
-              <div><span>Valor recebido</span><b>{money(receipt.paidAmount)}</b></div>
-              <div><span>Forma</span><b>{methodLabels[receipt.paymentMethod] || receipt.paymentMethod}</b></div>
+              <div><span>Cliente</span><b>{currentReceipt.customerName}</b></div>
+              <div><span>Parcela</span><b>{currentReceipt.installmentNumber}</b></div>
+              <div><span>Valor recebido</span><b>{money(currentReceipt.paidAmount)}</b></div>
+              <div><span>Forma</span><b>{methodLabels[currentReceipt.paymentMethod] || currentReceipt.paymentMethod}</b></div>
               <div><span>Vencimento</span><b>{dueDate}</b></div>
               <div><span>Recebido em</span><b>{paidDate}</b></div>
-              <div><span>Status</span><b>{receipt.remainingAmount > 0 ? `Saldo ${money(receipt.remainingAmount)}` : "Parcela quitada"}</b></div>
+              <div><span>Status</span><b>{currentReceipt.remainingAmount > 0 ? `Saldo ${money(currentReceipt.remainingAmount)}` : "Parcela quitada"}</b></div>
             </div>
           </div>
         </div>
