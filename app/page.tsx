@@ -1906,17 +1906,23 @@ function ChargesView({
           <Empty icon={Bell} text="Nenhuma cobrança nesta lista" />
         )}
       </section>
-      <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Registrar recebimento</DialogTitle>
-            <DialogDescription>
-              {selected
-                ? `${selected.customerName} • Parcela ${selected.installmentNumber} • Vencimento ${dateBR(selected.dueDate)}`
-                : ""}
-            </DialogDescription>
-          </DialogHeader>
-          {selected && (
+      {selected && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="payment-dialog-title"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !savingPayment) setSelected(null);
+          }}
+        >
+          <div className="w-full max-w-lg rounded-xl border bg-background p-6 shadow-xl">
+            <div className="mb-5">
+              <h2 id="payment-dialog-title" className="text-lg font-semibold">Registrar recebimento</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {selected.customerName} • Parcela {selected.installmentNumber} • Vencimento {dateBR(selected.dueDate)}
+              </p>
+            </div>
             <div className="form-grid">
               <div className="field">
                 <Label htmlFor="payment-amount">Valor recebido</Label>
@@ -1925,6 +1931,7 @@ function ChargesView({
                   inputMode="decimal"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
+                  autoFocus
                 />
                 <small>Saldo da parcela: {money(selected.amount)}</small>
               </div>
@@ -1967,19 +1974,18 @@ function ChargesView({
                   <AlertCircle /> {paymentError}
                 </div>
               )}
-              <div className="dialog-actions">
-                <Button variant="outline" onClick={() => setSelected(null)} disabled={savingPayment}>
-                  Cancelar
-                </Button>
-                <Button onClick={confirmPayment} disabled={savingPayment}>
-                  {savingPayment ? <Loader2 className="spin" /> : <Check />}
-                  Confirmar recebimento
-                </Button>
-              </div>
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
+            <div className="dialog-actions mt-5">
+              <Button type="button" variant="outline" onClick={() => setSelected(null)} disabled={savingPayment}>
+                Cancelar
+              </Button>
+              <Button type="button" onClick={confirmPayment} disabled={savingPayment}>
+                {savingPayment ? <><Loader2 className="animate-spin" /> Registrando...</> : <><Check /> Confirmar recebimento</>}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
