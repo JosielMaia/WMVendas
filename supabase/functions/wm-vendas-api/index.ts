@@ -617,7 +617,11 @@ Deno.serve(async (req) => {
     if (action === "create_sale") return reply({error:"Use a Venda Expressa para registrar com segurança."},410);
     if (action === "mark_paid") {
       const id=Number(body.id);
-      const amount=Number(body.amount);
+      const rawAmount=String(body.amount ?? "").trim();
+      const normalizedAmount=rawAmount.includes(",")
+        ? rawAmount.replace(/\./g, "").replace(",", ".")
+        : rawAmount;
+      const amount=Number(normalizedAmount);
       if(!Number.isInteger(id)||id<1||!Number.isFinite(amount)||amount<=0)return reply({error:"Informe uma parcela e um valor de pagamento válidos."},400);
       const paidDate=String(body.paidAt||"").trim();
       let paidAt=new Date().toISOString();
