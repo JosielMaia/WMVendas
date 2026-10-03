@@ -1653,7 +1653,9 @@ function ChargesView({
 
   async function confirmPayment() {
     if (!selected) return;
-    const normalized = amount.replace(/\./g, "").replace(",", ".");
+    const normalized = amount.includes(",")
+      ? amount.replace(/\./g, "").replace(",", ".")
+      : amount;
     const value = Number(normalized);
     if (!Number.isFinite(value) || value <= 0) return;
     setSavingPayment(true);
