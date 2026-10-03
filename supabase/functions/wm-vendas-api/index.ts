@@ -495,18 +495,25 @@ Deno.serve(async (req) => {
       return reply({ success: true });
     }
     if (action === "list") {
-      const [pr, cr, rr, sr, ar, br, tr] = await Promise.all([
+      const [pr, cr, rr, sr, ar, pm, br, tr] = await Promise.all([
         db.from("wm_products").select("*").eq("tenant_id",sessionTenantId).order("id", { ascending: false }),
         db.from("wm_customers").select("*").eq("tenant_id",sessionTenantId).order("name"),
-        db.from("wm_receivables").select("id,amount,due_date,status,installment_number,wm_customers(name,phone)").eq("tenant_id",sessionTenantId).eq("status", "pending").order("due_date"),
+        db.from("wm_receivables").select("id,amount,due_date,status,installment_number,customer_id,wm_customers(name,phone)").eq("tenant_id",sessionTenantId).eq("status", "pending").order("due_date"),
         db.from("wm_sales").select("customer_id,total,cost_total").eq("tenant_id",sessionTenantId),
         db.from("wm_receivables").select("customer_id,amount,due_date,status,paid_at").eq("tenant_id",sessionTenantId),
+        db.from("wm_receivable_payments").select("receivable_id,customer_id,amount,paid_at").eq("tenant_id",sessionTenantId),
         db.from("wm_supplier_bills").select("id,supplier_name,description,amount,due_date,barcode_line,status").eq("tenant_id",sessionTenantId).order("due_date"),
         db.from("wm_tenants").select("name,slug,owner_name,subscription_status,subscription_due_at,grace_until,monthly_price").eq("id",sessionTenantId).single()
       ]);
-      for (const result of [pr, cr, rr, sr, ar, br, tr]) if (result.error) throw result.error;
-      const products = pr.data || [], sales = sr.data || [], today = new Date().toISOString().slice(0, 10);
-      const charges = (rr.data || []).map((r: any) => ({ id:r.id, amount:Number(r.amount), dueDate:r.due_date, status:r.due_date<today?"overdue":"upcoming", installmentNumber:r.installment_number, customerName:r.wm_customers?.name||"Cliente", phone:r.wm_customers?.phone||"" }));
+      for (const result of [pr, cr, rr, sr, ar, pm, br, tr]) if (result.error) throw result.error;
+      const products = pr.data || [], sales = sr.data || [], payments = pm.data || [], today = new Date().toISOString().slice(0, 10);
+      const paidByReceivable = new Map<number,number>();
+      for(const p of payments) paidByReceivable.set(Number(p.receivable_id),(paidByReceivable.get(Number(p.receivable_id))||0)+Number(p.amount||0));
+      const charges = (rr.data || []).map((r: any) => {
+        const paid=Number(paidByReceivable.get(Number(r.id))||0);
+        const balance=Math.max(0,Number(r.amount)-paid);
+        return { id:r.id, amount:balance, originalAmount:Number(r.amount), paidAmount:paid, dueDate:r.due_date, status:r.due_date<today?"overdue":"upcoming", installmentNumber:r.installment_number, customerName:r.wm_customers?.name||"Cliente", phone:r.wm_customers?.phone||"" };
+      }).filter((r:any)=>r.amount>0);
       const investment = products.reduce((sum:number,p:any)=>sum+Number(p.cost_price)*p.stock,0);
       const expectedRevenue = products.reduce((sum:number,p:any)=>sum+Number(p.sale_price)*p.stock,0);
       const pending = charges.reduce((sum:number,r:any)=>sum+r.amount,0);
@@ -516,7 +523,7 @@ Deno.serve(async (req) => {
       const customerStats = new Map<number,{totalPurchased:number;purchaseCount:number;pendingBalance:number;overdueCount:number;latePayments:number}>();
       const statsFor=(id:number)=>{if(!customerStats.has(id))customerStats.set(id,{totalPurchased:0,purchaseCount:0,pendingBalance:0,overdueCount:0,latePayments:0});return customerStats.get(id)!};
       for(const sale of sales){if(sale.customer_id){const stat=statsFor(sale.customer_id);stat.totalPurchased+=Number(sale.total);stat.purchaseCount+=1}}
-      for(const item of ar.data||[]){if(!item.customer_id)continue;const stat=statsFor(item.customer_id);if(item.status==="pending"){stat.pendingBalance+=Number(item.amount);if(item.due_date<today)stat.overdueCount+=1}else if(item.status==="paid"&&item.paid_at&&item.paid_at.slice(0,10)>item.due_date){stat.latePayments+=1}}
+      for(const item of ar.data||[]){if(!item.customer_id)continue;const stat=statsFor(item.customer_id);const paid=Number(paidByReceivable.get(Number(item.id))||0);if(item.status==="pending"){const balance=Math.max(0,Number(item.amount)-paid);stat.pendingBalance+=balance;if(balance>0&&item.due_date<today)stat.overdueCount+=1}else if(item.status==="paid"&&item.paid_at&&item.paid_at.slice(0,10)>item.due_date){stat.latePayments+=1}}
       const photoPaths=products.map((p:any)=>p.photo_path).filter(Boolean);
       const signedByPath=new Map<string,string>();
       if(photoPaths.length){
@@ -529,7 +536,7 @@ Deno.serve(async (req) => {
         customers:(cr.data||[]).map((c:any)=>{const stat=statsFor(c.id);const loyaltyLevel=stat.totalPurchased>=3000?"Diamante":stat.totalPurchased>=1500?"Ouro":stat.totalPurchased>=500?"Prata":stat.totalPurchased>0?"Bronze":"Novo";const paymentStatus=stat.purchaseCount===0?"Novo":stat.overdueCount>0?"Em atraso":stat.latePayments>0?"Atenção":"Em dia";return {id:c.id,name:c.name,phone:c.phone,...stat,loyaltyLevel,paymentStatus}}),
         charges,
         supplierBills,
-        dashboard:{investment,expectedRevenue,expectedProfit:expectedRevenue-investment,salesTotal:sales.reduce((s:number,x:any)=>s+Number(x.total),0),received:0,pending,overdueCount:charges.filter((c:any)=>c.status==="overdue").length,supplierPendingTotal:pendingSupplierBills.reduce((s:number,b:any)=>s+b.amount,0),supplierDueSoonCount:pendingSupplierBills.filter((b:any)=>["today","dueSoon"].includes(b.status)).length,supplierOverdueCount:pendingSupplierBills.filter((b:any)=>b.status==="overdue").length}
+        dashboard:{investment,expectedRevenue,expectedProfit:expectedRevenue-investment,salesTotal:sales.reduce((s:number,x:any)=>s+Number(x.total),0),received:payments.reduce((s:number,x:any)=>s+Number(x.amount||0),0),pending,overdueCount:charges.filter((c:any)=>c.status==="overdue").length,supplierPendingTotal:pendingSupplierBills.reduce((s:number,b:any)=>s+b.amount,0),supplierDueSoonCount:pendingSupplierBills.filter((b:any)=>["today","dueSoon"].includes(b.status)).length,supplierOverdueCount:pendingSupplierBills.filter((b:any)=>b.status==="overdue").length}
       });
     }
     if (action === "create_product") {
@@ -609,8 +616,31 @@ Deno.serve(async (req) => {
     }
     if (action === "create_sale") return reply({error:"Use a Venda Expressa para registrar com segurança."},410);
     if (action === "mark_paid") {
-      const {error}=await db.from("wm_receivables").update({status:"paid",paid_at:new Date().toISOString()}).eq("tenant_id",sessionTenantId).eq("id",Number(body.id));if(error)throw error;
-      return reply({message:"Pagamento confirmado"});
+      const id=Number(body.id);
+      const amount=Number(body.amount);
+      if(!Number.isInteger(id)||id<1||!Number.isFinite(amount)||amount<=0)return reply({error:"Informe uma parcela e um valor de pagamento válidos."},400);
+      const paidDate=String(body.paidAt||"").trim();
+      let paidAt=new Date().toISOString();
+      if(paidDate){
+        const parsed=new Date(paidDate);
+        if(Number.isNaN(parsed.getTime()))return reply({error:"Data de pagamento inválida."},400);
+        paidAt=parsed.toISOString();
+      }
+      const {data,error}=await db.rpc("wm_record_receivable_payment",{
+        p_tenant_id:sessionTenantId,
+        p_receivable_id:id,
+        p_amount:amount,
+        p_payment_method:String(body.paymentMethod||"dinheiro"),
+        p_paid_at:paidAt,
+        p_notes:String(body.notes||"")
+      });
+      if(error)return reply({error:error.message},400);
+      await audit(session,"receivable.payment_recorded","receivable",String(id),{
+        paymentId:data?.paymentId,
+        amount:Number(data?.paidAmount||amount),
+        paymentMethod:String(body.paymentMethod||"dinheiro")
+      });
+      return reply({message:data?.status==="paid"?"Parcela quitada e recebimento registrado.":"Pagamento registrado. Ainda existe saldo nesta parcela.",receipt:data});
     }
     if (action === "create_supplier_bill") {
       const supplierName=String(body.supplierName||"").trim(),dueDate=String(body.dueDate||""),amount=Number(body.amount);
