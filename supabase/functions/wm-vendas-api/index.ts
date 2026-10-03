@@ -512,7 +512,7 @@ Deno.serve(async (req) => {
       const charges = (rr.data || []).map((r: any) => {
         const paid=Number(paidByReceivable.get(Number(r.id))||0);
         const balance=Math.max(0,Number(r.amount)-paid);
-        return { id:r.id, amount:balance, originalAmount:Number(r.amount), paidAmount:paid, dueDate:r.due_date, status:r.due_date<today?"overdue":"upcoming", installmentNumber:r.installment_number, customerName:r.wm_customers?.name||"Cliente", phone:r.wm_customers?.phone||"" };
+        return { id:r.id, customerId:Number(r.customer_id), amount:balance, originalAmount:Number(r.amount), paidAmount:paid, dueDate:r.due_date, status:r.due_date<today?"overdue":"upcoming", installmentNumber:r.installment_number, customerName:r.wm_customers?.name||"Cliente", phone:r.wm_customers?.phone||"" };
       }).filter((r:any)=>r.amount>0);
       const investment = products.reduce((sum:number,p:any)=>sum+Number(p.cost_price)*p.stock,0);
       const expectedRevenue = products.reduce((sum:number,p:any)=>sum+Number(p.sale_price)*p.stock,0);
@@ -617,6 +617,13 @@ Deno.serve(async (req) => {
     if (action === "create_sale") return reply({error:"Use a Venda Expressa para registrar com segurança."},410);
     if (action === "mark_paid") {
       const id=Number(body.id);
+      const customerId=Number(body.customerId);
+      if(!Number.isInteger(customerId)||customerId<1)return reply({error:"Cliente inválido. Atualize a tela e tente novamente."},400);
+      const {data:target,error:targetError}=await db.from("wm_receivables").select("id,customer_id,status,amount,due_date,installment_number").eq("tenant_id",sessionTenantId).eq("id",id).maybeSingle();
+      if(targetError)throw targetError;
+      if(!target)return reply({error:"A parcela selecionada não foi encontrada. Atualize a tela."},404);
+      if(Number(target.customer_id)!==customerId)return reply({error:"A cliente desta parcela mudou ou não corresponde à seleção. Atualize a tela antes de registrar o pagamento."},409);
+      if(target.status==="paid")return reply({error:"Esta parcela já está quitada. Atualize a tela antes de registrar outro pagamento."},409);
       const rawAmount=String(body.amount ?? "").trim();
       const normalizedAmount=rawAmount.includes(",")
         ? rawAmount.replace(/\./g, "").replace(",", ".")
