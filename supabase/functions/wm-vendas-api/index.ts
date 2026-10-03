@@ -500,7 +500,7 @@ Deno.serve(async (req) => {
         db.from("wm_customers").select("*").eq("tenant_id",sessionTenantId).order("name"),
         db.from("wm_receivables").select("id,amount,due_date,status,installment_number,customer_id,wm_customers(name,phone)").eq("tenant_id",sessionTenantId).eq("status", "pending").order("due_date"),
         db.from("wm_sales").select("customer_id,total,cost_total").eq("tenant_id",sessionTenantId),
-        db.from("wm_receivables").select("customer_id,amount,due_date,status,paid_at").eq("tenant_id",sessionTenantId),
+        db.from("wm_receivables").select("id,customer_id,amount,due_date,status,paid_at").eq("tenant_id",sessionTenantId),
         db.from("wm_receivable_payments").select("receivable_id,customer_id,amount,paid_at").eq("tenant_id",sessionTenantId),
         db.from("wm_supplier_bills").select("id,supplier_name,description,amount,due_date,barcode_line,status").eq("tenant_id",sessionTenantId).order("due_date"),
         db.from("wm_tenants").select("name,slug,owner_name,subscription_status,subscription_due_at,grace_until,monthly_price").eq("id",sessionTenantId).single()
