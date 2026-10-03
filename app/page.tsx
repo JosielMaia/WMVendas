@@ -81,6 +81,7 @@ type Customer = {
 };
 type Charge = {
   id: number;
+  customerId: number;
   customerName: string;
   phone: string;
   amount: number;
@@ -1820,7 +1821,7 @@ function ChargesView({
   charges: Charge[];
   pay: (
     id: number,
-    details: { amount: number; paymentMethod: string; paidAt: string; notes?: string },
+    details: { customerId: number; amount: number; paymentMethod: string; paidAt: string; notes?: string },
   ) => Promise<any>;
 }) {
   const [tab, setTab] = useState("todas");
@@ -1831,6 +1832,7 @@ function ChargesView({
   const [notes, setNotes] = useState("");
   const [savingPayment, setSavingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState("");
+  const [confirmedTarget, setConfirmedTarget] = useState(false);
   const list = charges.filter((c) => tab === "todas" || c.status === tab);
 
   function openPayment(charge: Charge) {
@@ -1840,10 +1842,15 @@ function ChargesView({
     setPaidAt(new Date().toISOString().slice(0, 10));
     setNotes("");
     setPaymentError("");
+    setConfirmedTarget(false);
   }
 
   async function confirmPayment() {
     if (!selected) return;
+    if (!confirmedTarget) {
+      setPaymentError("Confirme o nome da cliente e a parcela antes de registrar o recebimento.");
+      return;
+    }
     setPaymentError("");
     const normalized = amount.includes(",")
       ? amount.replace(/\./g, "").replace(",", ".")
@@ -1860,6 +1867,7 @@ function ChargesView({
     setSavingPayment(true);
     try {
       await pay(selected.id, {
+        customerId: selected.customerId,
         amount: value,
         paymentMethod,
         paidAt: new Date(paidAt + "T12:00:00").toISOString(),
@@ -1928,8 +1936,9 @@ function ChargesView({
             <div className="mb-5">
               <h2 id="payment-dialog-title" className="text-lg font-semibold">Registrar recebimento</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                {selected.customerName} • Parcela {selected.installmentNumber} • Vencimento {dateBR(selected.dueDate)}
+                Confira com atenção antes de confirmar: este recebimento será lançado para <strong>{selected.customerName}</strong>, parcela <strong>{selected.installmentNumber}</strong>, vencimento <strong>{dateBR(selected.dueDate)}</strong>.
               </p>
+              {selected.phone && <p className="mt-1 text-xs text-muted-foreground">WhatsApp: {selected.phone}</p>}
             </div>
             <div className="form-grid">
               <div className="field">
@@ -1977,6 +1986,19 @@ function ChargesView({
                   placeholder="Ex.: pagamento antecipado"
                 />
               </div>
+              <label className="flex items-start gap-3 rounded-lg border bg-muted/40 p-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={confirmedTarget}
+                  onChange={(e) => {
+                    setConfirmedTarget(e.target.checked);
+                    if (e.target.checked) setPaymentError("");
+                  }}
+                  disabled={savingPayment}
+                  className="mt-0.5 h-4 w-4 shrink-0"
+                />
+                <span>Confirmo que conferi a cliente, a parcela e o valor antes de registrar o pagamento.</span>
+              </label>
               {paymentError && (
                 <div className="payment-error" role="alert">
                   <AlertCircle /> {paymentError}
@@ -1987,7 +2009,7 @@ function ChargesView({
               <Button type="button" variant="outline" onClick={() => setSelected(null)} disabled={savingPayment}>
                 Cancelar
               </Button>
-              <Button type="button" onClick={confirmPayment} disabled={savingPayment}>
+              <Button type="button" onClick={confirmPayment} disabled={savingPayment || !confirmedTarget}>
                 {savingPayment ? <><Loader2 className="animate-spin" /> Registrando...</> : <><Check /> Confirmar recebimento</>}
               </Button>
             </div>
