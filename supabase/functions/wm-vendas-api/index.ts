@@ -59,7 +59,7 @@ function businessProfile(activityValue:unknown,segmentValue:unknown){
   return {activity,segment};
 }
 
-const sellerActions=new Set(["session_check","list","barcode_lookup","logout","create_customer","create_sale","create_express_sale","create_product","update_product","mark_paid","update_store_order_status"]);
+const sellerActions=new Set(["session_check","list","barcode_lookup","logout","create_customer","create_sale","create_express_sale","create_product","update_product","mark_paid","customer_history","update_store_order_status"]);
 const viewerActions=new Set(["session_check","list","barcode_lookup","logout"]);
 function canRun(role:string,action:string){return role==="owner"||role==="admin"||(role==="seller"&&sellerActions.has(action))||(role==="viewer"&&viewerActions.has(action))}
 async function audit(session:{tenantId:string;userId:string|null;memberId:string|null;role:string|null},eventType:string,entityType:string,entityId:string|null,metadata:Record<string,unknown>={}){
@@ -641,6 +641,79 @@ Deno.serve(async (req) => {
         paymentMethod:String(body.paymentMethod||"dinheiro")
       });
       return reply({message:data?.status==="paid"?"Parcela quitada e recebimento registrado.":"Pagamento registrado. Ainda existe saldo nesta parcela.",receipt:data});
+    }
+    if (action === "customer_history") {
+      const customerId=Number(body.customerId);
+      if(!Number.isInteger(customerId)||customerId<1)return reply({error:"Cliente inválido."},400);
+      const [{data:customer,error:customerError},{data:receivables,error:receivableError},{data:sales,error:salesError},{data:payments,error:paymentsError}]=await Promise.all([
+        db.from("wm_customers").select("id,name,phone").eq("tenant_id",sessionTenantId).eq("id",customerId).maybeSingle(),
+        db.from("wm_receivables").select("id,sale_id,installment_number,amount,due_date,status,paid_at").eq("tenant_id",sessionTenantId).eq("customer_id",customerId).order("due_date",{ascending:false}),
+        db.from("wm_sales").select("id,total,discount,sold_at,payment_method,installments,receipt_code").eq("tenant_id",sessionTenantId).eq("customer_id",customerId).order("sold_at",{ascending:false}),
+        db.from("wm_receivable_payments").select("id,receivable_id,customer_id,amount,paid_at,payment_method,notes,entry_type,created_at").eq("tenant_id",sessionTenantId).eq("customer_id",customerId).order("paid_at",{ascending:false})
+      ]);
+      for(const result of [customerError,receivableError,salesError,paymentsError])if(result)throw result;
+      if(!customer)return reply({error:"Cliente não encontrado."},404);
+      const paymentRows=payments||[];
+      const paidByReceivable=new Map<number,number>();
+      for(const payment of paymentRows)paidByReceivable.set(Number(payment.receivable_id),(paidByReceivable.get(Number(payment.receivable_id))||0)+Number(payment.amount||0));
+      const saleTotals=new Map<number,number>();
+      for(const sale of sales||[])saleTotals.set(Number(sale.id),(saleTotals.get(Number(sale.id))||0)+Number(sale.total||0));
+      const installments=(receivables||[]).map((r:any)=>{
+        const paid=Number(paidByReceivable.get(Number(r.id))||0);
+        return {
+          id:r.id,
+          saleId:r.sale_id,
+          installmentNumber:r.installment_number,
+          amount:Number(r.amount),
+          paidAmount:paid,
+          remainingAmount:Math.max(0,Number(r.amount)-paid),
+          dueDate:r.due_date,
+          status:r.status==="paid"||paid>=Number(r.amount)-0.005?"paid":"pending",
+          paidAt:r.paid_at
+        };
+      });
+      const historyPayments=paymentRows.map((p:any)=>{
+        const r=(receivables||[]).find((item:any)=>Number(item.id)===Number(p.receivable_id));
+        const paidTotal=Number(paidByReceivable.get(Number(p.receivable_id))||0);
+        return {
+          paymentId:p.id,
+          receivableId:p.receivable_id,
+          saleId:r?.sale_id||null,
+          installmentNumber:r?.installment_number||null,
+          installmentAmount:Number(r?.amount||0),
+          paidAmount:Number(p.amount||0),
+          paidTotal,
+          remainingAmount:Math.max(0,Number(r?.amount||0)-paidTotal),
+          dueDate:r?.due_date||"",
+          paidAt:p.paid_at,
+          paymentMethod:p.payment_method||"dinheiro",
+          notes:p.notes||"",
+          entryType:p.entry_type||"manual"
+        };
+      });
+      const purchaseRows=(sales||[]).reduce((items:any[],sale:any)=>{
+        const existing=items.find((item:any)=>item.saleId===Number(sale.id));
+        if(existing){existing.total+=Number(sale.total||0);return items;}
+        items.push({
+          saleId:Number(sale.id),
+          total:Number(saleTotals.get(Number(sale.id))||0),
+          soldAt:sale.sold_at,
+          paymentMethod:sale.payment_method,
+          installments:sale.installments,
+          receiptCode:sale.receipt_code
+        });
+        return items;
+      },[]);
+      const totalPurchased=(sales||[]).reduce((sum:number,sale:any)=>sum+Number(sale.total||0),0);
+      const totalPaid=historyPayments.reduce((sum:number,p:any)=>sum+Number(p.paidAmount||0),0);
+      const openBalance=installments.reduce((sum:number,item:any)=>sum+Number(item.remainingAmount||0),0);
+      return reply({
+        customer:{id:customer.id,name:customer.name,phone:customer.phone||""},
+        summary:{totalPurchased,totalPaid,openBalance,purchasesCount:purchaseRows.length,pendingInstallments:installments.filter((i:any)=>i.remainingAmount>0).length},
+        purchases:purchaseRows,
+        installments,
+        payments:historyPayments
+      });
     }
     if (action === "create_supplier_bill") {
       const supplierName=String(body.supplierName||"").trim(),dueDate=String(body.dueDate||""),amount=Number(body.amount);
