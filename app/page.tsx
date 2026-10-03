@@ -84,9 +84,29 @@ type Charge = {
   customerName: string;
   phone: string;
   amount: number;
+  originalAmount?: number;
+  paidAmount?: number;
   dueDate: string;
   status: string;
   installmentNumber: number;
+};
+type PaymentReceipt = {
+  paymentId: number;
+  cashEntryId: number;
+  receivableId: number;
+  saleId: number;
+  customerId: number;
+  customerName: string;
+  customerPhone: string;
+  installmentNumber: number;
+  installmentAmount: number;
+  paidAmount: number;
+  paidTotal: number;
+  remainingAmount: number;
+  dueDate: string;
+  paidAt: string;
+  paymentMethod: string;
+  status: string;
 };
 type SupplierBill = {
   id: number;
@@ -272,6 +292,7 @@ export default function HomePage() {
     >(null),
     [saving, setSaving] = useState(false);
   const [saleProductId, setSaleProductId] = useState<string>("");
+  const [paymentReceipt, setPaymentReceipt] = useState<PaymentReceipt | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [search, setSearch] = useState(""),
     [toast, setToast] = useState(""),
@@ -681,7 +702,11 @@ export default function HomePage() {
               {view === "cobrancas" && (
                 <ChargesView
                   charges={data.charges}
-                  pay={(id) => submit("mark_paid", { id })}
+                  pay={async (id, details) => {
+                    const j = await submit("mark_paid", { id, ...details });
+                    if (j?.receipt) setPaymentReceipt(j.receipt as PaymentReceipt);
+                    return j;
+                  }}
                 />
               )}
               {view === "fornecedores" && (
@@ -761,6 +786,7 @@ export default function HomePage() {
         save={submit}
         saving={saving}
       />
+      <PaymentReceiptDialog receipt={paymentReceipt} close={() => setPaymentReceipt(null)} />
       <ScannerDialog
         open={modal === "scanner"}
         close={() => setModal("product")}
@@ -1603,10 +1629,47 @@ function ChargesView({
   pay,
 }: {
   charges: Charge[];
-  pay: (id: number) => void;
+  pay: (
+    id: number,
+    details: { amount: number; paymentMethod: string; paidAt: string; notes?: string },
+  ) => Promise<any>;
 }) {
   const [tab, setTab] = useState("todas");
+  const [selected, setSelected] = useState<Charge | null>(null);
+  const [amount, setAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("dinheiro");
+  const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
+  const [notes, setNotes] = useState("");
+  const [savingPayment, setSavingPayment] = useState(false);
   const list = charges.filter((c) => tab === "todas" || c.status === tab);
+
+  function openPayment(charge: Charge) {
+    setSelected(charge);
+    setAmount(charge.amount.toFixed(2).replace(".", ","));
+    setPaymentMethod("dinheiro");
+    setPaidAt(new Date().toISOString().slice(0, 10));
+    setNotes("");
+  }
+
+  async function confirmPayment() {
+    if (!selected) return;
+    const normalized = amount.replace(/\./g, "").replace(",", ".");
+    const value = Number(normalized);
+    if (!Number.isFinite(value) || value <= 0) return;
+    setSavingPayment(true);
+    try {
+      await pay(selected.id, {
+        amount: value,
+        paymentMethod,
+        paidAt: new Date(paidAt + "T12:00:00").toISOString(),
+        notes,
+      });
+      setSelected(null);
+    } finally {
+      setSavingPayment(false);
+    }
+  }
+
   return (
     <>
       <PageTitle eyebrow="FINANCEIRO" title="Cobranças" />
@@ -1630,7 +1693,7 @@ function ChargesView({
               >
                 <Send /> Lembrar no WhatsApp
               </a>
-              <Button variant="outline" onClick={() => pay(c.id)}>
+              <Button variant="outline" onClick={() => openPayment(c)}>
                 <Check /> Recebido
               </Button>
             </div>
@@ -1640,6 +1703,75 @@ function ChargesView({
           <Empty icon={Bell} text="Nenhuma cobrança nesta lista" />
         )}
       </section>
+      <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Registrar recebimento</DialogTitle>
+            <DialogDescription>
+              {selected
+                ? `${selected.customerName} • Parcela ${selected.installmentNumber} • Vencimento ${dateBR(selected.dueDate)}`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {selected && (
+            <div className="form-grid">
+              <div className="field">
+                <Label htmlFor="payment-amount">Valor recebido</Label>
+                <Input
+                  id="payment-amount"
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                />
+                <small>Saldo da parcela: {money(selected.amount)}</small>
+              </div>
+              <div className="field">
+                <Label htmlFor="payment-method">Forma de pagamento</Label>
+                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                  <SelectTrigger id="payment-method">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="dinheiro">Dinheiro</SelectItem>
+                    <SelectItem value="pix">PIX</SelectItem>
+                    <SelectItem value="cartao">Cartão</SelectItem>
+                    <SelectItem value="transferencia">Transferência</SelectItem>
+                    <SelectItem value="outro">Outro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="field">
+                <Label htmlFor="payment-date">Data em que recebeu</Label>
+                <Input
+                  id="payment-date"
+                  type="date"
+                  value={paidAt}
+                  onChange={(e) => setPaidAt(e.target.value)}
+                />
+                <small>Você pode registrar um pagamento antecipado.</small>
+              </div>
+              <div className="field">
+                <Label htmlFor="payment-notes">Observação (opcional)</Label>
+                <Input
+                  id="payment-notes"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Ex.: pagamento antecipado"
+                />
+              </div>
+              <div className="dialog-actions">
+                <Button variant="outline" onClick={() => setSelected(null)} disabled={savingPayment}>
+                  Cancelar
+                </Button>
+                <Button onClick={confirmPayment} disabled={savingPayment}>
+                  {savingPayment ? <Loader2 className="spin" /> : <Check />}
+                  Confirmar recebimento
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -1664,6 +1796,91 @@ function whatsappLink(c: Charge) {
   const phone = `55${c.phone.replace(/\D/g, "")}`;
   const msg = `Olá, ${c.customerName}! Tudo bem? 😊 Passando para lembrar que sua parcela de ${money(c.amount)} ${c.status === "overdue" ? "venceu" : "vence"} em ${new Intl.DateTimeFormat("pt-BR").format(new Date(`${c.dueDate}T12:00:00`))}. Se já realizou o pagamento, pode desconsiderar. Obrigada! Walquíria Maia`;
   return `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+}
+function PaymentReceiptDialog({
+  receipt,
+  close,
+}: {
+  receipt: PaymentReceipt | null;
+  close: () => void;
+}) {
+  if (!receipt) return null;
+  const paidDate = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(receipt.paidAt));
+  const dueDate = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(receipt.dueDate + "T12:00:00"));
+  const methodLabels: Record<string, string> = {
+    dinheiro: "Dinheiro",
+    pix: "PIX",
+    cartao: "Cartão",
+    transferencia: "Transferência",
+    outro: "Outro",
+  };
+  const receiptCode = `WM-${String(receipt.paymentId).padStart(6, "0")}`;
+  const message = [
+    "🧾 RECIBO DE PAGAMENTO — WM Vendas",
+    `Recibo: ${receiptCode}`,
+    `Cliente: ${receipt.customerName}`,
+    `Parcela: ${receipt.installmentNumber}`,
+    `Valor recebido: ${money(receipt.paidAmount)}`,
+    `Forma de pagamento: ${methodLabels[receipt.paymentMethod] || receipt.paymentMethod}`,
+    `Vencimento original: ${dueDate}`,
+    `Pagamento recebido em: ${paidDate}`,
+    receipt.remainingAmount > 0 ? `Saldo restante: ${money(receipt.remainingAmount)}` : "Parcela quitada.",
+    "Obrigada pela preferência! — WM Vendas",
+  ].join("\n");
+  const whatsapp = receipt.customerPhone
+    ? `https://wa.me/55${receipt.customerPhone.replace(/\\D/g, "")}?text=${encodeURIComponent(message)}`
+    : `https://wa.me/?text=${encodeURIComponent(message)}`;
+
+  function printReceipt() {
+    const win = window.open("", "_blank", "width=480,height=720");
+    if (!win) return;
+    win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Recibo ${receiptCode}</title><style>body{font-family:Arial,sans-serif;padding:28px;max-width:420px;margin:auto;color:#222}h1{font-size:20px;margin-bottom:4px}.muted{color:#666;font-size:12px}.box{border:1px solid #ddd;border-radius:12px;padding:16px;margin-top:18px}.row{display:flex;justify-content:space-between;gap:18px;padding:8px 0;border-bottom:1px solid #eee}.row:last-child{border-bottom:0}.total{font-size:22px;font-weight:700}.footer{text-align:center;margin-top:22px;font-size:12px;color:#666}</style></head><body><h1>WM Vendas</h1><div class="muted">Recibo de pagamento • ${receiptCode}</div><div class="box"><div class="row"><span>Cliente</span><b>${receipt.customerName}</b></div><div class="row"><span>Parcela</span><b>${receipt.installmentNumber}</b></div><div class="row"><span>Vencimento original</span><b>${dueDate}</b></div><div class="row"><span>Pagamento</span><b>${paidDate}</b></div><div class="row"><span>Forma</span><b>${methodLabels[receipt.paymentMethod] || receipt.paymentMethod}</b></div><div class="row"><span>Valor recebido</span><b class="total">${money(receipt.paidAmount)}</b></div>${receipt.remainingAmount > 0 ? `<div class="row"><span>Saldo restante</span><b>${money(receipt.remainingAmount)}</b></div>` : `<div class="row"><span>Status</span><b>PARCELA QUITADA</b></div>`}</div><div class="footer">Obrigada pela preferência!<br>WM Vendas</div><script>window.onload=()=>{window.print();setTimeout(()=>window.close(),400)}</script></body></html>`);
+    win.document.close();
+  }
+
+  async function shareReceipt() {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: `Recibo ${receiptCode}`, text: message });
+      } catch {}
+    } else {
+      window.open(whatsapp, "_blank", "noopener,noreferrer");
+    }
+  }
+
+  return (
+    <Dialog open={!!receipt} onOpenChange={(open) => !open && close()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Pagamento registrado</DialogTitle>
+          <DialogDescription>Recibo {receiptCode} pronto para enviar.</DialogDescription>
+        </DialogHeader>
+        <div className="panel receipt-card">
+          <div className="receipt-heading">
+            <ReceiptText />
+            <div>
+              <b>WM Vendas</b>
+              <small>Recibo de pagamento</small>
+            </div>
+          </div>
+          <div className="receipt-lines">
+            <div><span>Cliente</span><b>{receipt.customerName}</b></div>
+            <div><span>Parcela</span><b>{receipt.installmentNumber}</b></div>
+            <div><span>Valor recebido</span><b>{money(receipt.paidAmount)}</b></div>
+            <div><span>Forma</span><b>{methodLabels[receipt.paymentMethod] || receipt.paymentMethod}</b></div>
+            <div><span>Vencimento</span><b>{dueDate}</b></div>
+            <div><span>Recebido em</span><b>{paidDate}</b></div>
+            <div><span>Status</span><b>{receipt.remainingAmount > 0 ? `Saldo ${money(receipt.remainingAmount)}` : "Parcela quitada"}</b></div>
+          </div>
+        </div>
+        <div className="dialog-actions">
+          <Button variant="outline" onClick={printReceipt}><Download /> Imprimir / Salvar PDF</Button>
+          <a className="whatsapp" href={whatsapp} target="_blank" rel="noreferrer"><Send /> Enviar pelo WhatsApp</a>
+          <Button onClick={shareReceipt}><Share /> Compartilhar</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 function SupplierBillsView({
   bills,
