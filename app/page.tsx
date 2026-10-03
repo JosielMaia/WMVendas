@@ -1830,6 +1830,7 @@ function ChargesView({
   const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
   const [savingPayment, setSavingPayment] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
   const list = charges.filter((c) => tab === "todas" || c.status === tab);
 
   function openPayment(charge: Charge) {
@@ -1838,15 +1839,24 @@ function ChargesView({
     setPaymentMethod("dinheiro");
     setPaidAt(new Date().toISOString().slice(0, 10));
     setNotes("");
+    setPaymentError("");
   }
 
   async function confirmPayment() {
     if (!selected) return;
+    setPaymentError("");
     const normalized = amount.includes(",")
       ? amount.replace(/\./g, "").replace(",", ".")
       : amount;
     const value = Number(normalized);
-    if (!Number.isFinite(value) || value <= 0) return;
+    if (!Number.isFinite(value) || value <= 0) {
+      setPaymentError("Informe um valor recebido válido.");
+      return;
+    }
+    if (value > selected.amount + 0.005) {
+      setPaymentError("O valor recebido não pode ser maior que o saldo da parcela.");
+      return;
+    }
     setSavingPayment(true);
     try {
       await pay(selected.id, {
@@ -1856,6 +1866,8 @@ function ChargesView({
         notes,
       });
       setSelected(null);
+    } catch (error) {
+      setPaymentError(error instanceof Error ? error.message : "Não foi possível registrar o pagamento.");
     } finally {
       setSavingPayment(false);
     }
@@ -1950,6 +1962,11 @@ function ChargesView({
                   placeholder="Ex.: pagamento antecipado"
                 />
               </div>
+              {paymentError && (
+                <div className="payment-error" role="alert">
+                  <AlertCircle /> {paymentError}
+                </div>
+              )}
               <div className="dialog-actions">
                 <Button variant="outline" onClick={() => setSelected(null)} disabled={savingPayment}>
                   Cancelar
