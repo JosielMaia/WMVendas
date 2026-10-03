@@ -1896,9 +1896,17 @@ function ChargesView({
               >
                 <Send /> Lembrar no WhatsApp
               </a>
-              <Button variant="outline" onClick={() => openPayment(c)}>
+              <button
+                type="button"
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-md border bg-background px-3 text-sm font-medium shadow-xs hover:bg-accent hover:text-accent-foreground"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  openPayment(c);
+                }}
+              >
                 <Check /> Recebido
-              </Button>
+              </button>
             </div>
           </div>
         ))}
@@ -1937,18 +1945,18 @@ function ChargesView({
               </div>
               <div className="field">
                 <Label htmlFor="payment-method">Forma de pagamento</Label>
-                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                  <SelectTrigger id="payment-method">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="dinheiro">Dinheiro</SelectItem>
-                    <SelectItem value="pix">PIX</SelectItem>
-                    <SelectItem value="cartao">Cartão</SelectItem>
-                    <SelectItem value="transferencia">Transferência</SelectItem>
-                    <SelectItem value="outro">Outro</SelectItem>
-                  </SelectContent>
-                </Select>
+                <select
+                  id="payment-method"
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  className="flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2"
+                >
+                  <option value="dinheiro">Dinheiro</option>
+                  <option value="pix">PIX</option>
+                  <option value="cartao">Cartão</option>
+                  <option value="transferencia">Transferência</option>
+                  <option value="outro">Outro</option>
+                </select>
               </div>
               <div className="field">
                 <Label htmlFor="payment-date">Data em que recebeu</Label>
@@ -2063,38 +2071,55 @@ function PaymentReceiptDialog({
   }
 
   return (
-    <Dialog open={!!receipt} onOpenChange={(open) => !open && close()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Pagamento registrado</DialogTitle>
-          <DialogDescription>Recibo {receiptCode} pronto para enviar.</DialogDescription>
-        </DialogHeader>
-        <div className="panel receipt-card">
-          <div className="receipt-heading">
-            <ReceiptText />
-            <div>
-              <b>WM Vendas</b>
-              <small>Recibo de pagamento</small>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="payment-receipt-title"
+      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) close();
+      }}
+    >
+      <div className="w-full max-w-lg overflow-hidden rounded-2xl border bg-background shadow-2xl">
+        <div className="flex items-center justify-between border-b px-5 py-4">
+          <div>
+            <h2 id="payment-receipt-title" className="text-lg font-semibold">Pagamento registrado</h2>
+            <p className="text-sm text-muted-foreground">Recibo {receiptCode} pronto para enviar.</p>
+          </div>
+          <button type="button" aria-label="Fechar" className="rounded-md p-2 hover:bg-accent" onClick={close}><X /></button>
+        </div>
+        <div className="p-5">
+          <div className="panel receipt-card">
+            <div className="receipt-heading">
+              <ReceiptText />
+              <div>
+                <b>WM Vendas</b>
+                <small>Recibo de pagamento</small>
+              </div>
+            </div>
+            <div className="receipt-lines">
+              <div><span>Cliente</span><b>{receipt.customerName}</b></div>
+              <div><span>Parcela</span><b>{receipt.installmentNumber}</b></div>
+              <div><span>Valor recebido</span><b>{money(receipt.paidAmount)}</b></div>
+              <div><span>Forma</span><b>{methodLabels[receipt.paymentMethod] || receipt.paymentMethod}</b></div>
+              <div><span>Vencimento</span><b>{dueDate}</b></div>
+              <div><span>Recebido em</span><b>{paidDate}</b></div>
+              <div><span>Status</span><b>{receipt.remainingAmount > 0 ? `Saldo ${money(receipt.remainingAmount)}` : "Parcela quitada"}</b></div>
             </div>
           </div>
-          <div className="receipt-lines">
-            <div><span>Cliente</span><b>{receipt.customerName}</b></div>
-            <div><span>Parcela</span><b>{receipt.installmentNumber}</b></div>
-            <div><span>Valor recebido</span><b>{money(receipt.paidAmount)}</b></div>
-            <div><span>Forma</span><b>{methodLabels[receipt.paymentMethod] || receipt.paymentMethod}</b></div>
-            <div><span>Vencimento</span><b>{dueDate}</b></div>
-            <div><span>Recebido em</span><b>{paidDate}</b></div>
-            <div><span>Status</span><b>{receipt.remainingAmount > 0 ? `Saldo ${money(receipt.remainingAmount)}` : "Parcela quitada"}</b></div>
-          </div>
         </div>
-        <div className="dialog-actions">
-          <Button variant="outline" onClick={printReceipt}><Download /> Imprimir / Salvar PDF</Button>
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t px-5 py-4">
+          <button type="button" className="inline-flex h-9 items-center justify-center gap-2 rounded-md border bg-background px-3 text-sm font-medium shadow-xs hover:bg-accent" onClick={printReceipt}>
+            <Download /> Imprimir / Salvar PDF
+          </button>
           <a className="whatsapp" href={whatsapp} target="_blank" rel="noreferrer"><Send /> Enviar pelo WhatsApp</a>
-          <Button onClick={shareReceipt}><Share /> Compartilhar</Button>
+          <button type="button" className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90" onClick={shareReceipt}>
+            <Share /> Compartilhar
+          </button>
         </div>
-      </DialogContent>
-    </Dialog>
-  );
+      </div>
+    </div>
+  )
 }
 function SupplierBillsView({
   bills,
