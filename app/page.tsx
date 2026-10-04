@@ -262,6 +262,10 @@ type FinanceReport = {
     outstanding: number;
     costOfGoods: number;
     estimatedProfit: number;
+    loanOutstanding: number;
+    loanPrincipalActive: number;
+    loanPaymentsReceived: number;
+    loanOutflow: number;
   };
   entries: CashEntry[];
   receipts: SaleReceipt[];
@@ -1771,6 +1775,7 @@ function CustomerHistoryDialog({
                 <TabsTrigger value="resumo">Parcelas</TabsTrigger>
                 <TabsTrigger value="pagamentos">Pagamentos</TabsTrigger>
                 <TabsTrigger value="compras">Compras</TabsTrigger>
+                <TabsTrigger value="emprestimos">Empréstimos</TabsTrigger>
               </TabsList>
             </Tabs>
             <section className="panel list-panel customer-history-list">
@@ -1823,6 +1828,25 @@ function CustomerHistoryDialog({
                     </div>
                   ))}
                   {!history.purchases.length && <Empty icon={CircleDollarSign} text="Nenhuma compra registrada." />}
+                </>
+              )}
+              {tab === "emprestimos" && (
+                <>
+                  <div className="stats mini">
+                    <article className="stat"><small>Total emprestado</small><strong>{money(history.summary.loanTotalBorrowed)}</strong></article>
+                    <article className="stat"><small>Já pago</small><strong>{money(history.summary.loanPaidTotal)}</strong></article>
+                    <article className="stat"><small>Falta pagar</small><strong>{money(history.summary.loanOpenTotal)}</strong></article>
+                  </div>
+                  {history.loans.map((loan) => (
+                    <div className="history-row" key={loan.id}>
+                      <div>
+                        <b>Empréstimo #{loan.id} · {money(loan.totalAmount)}</b>
+                        <small>{loan.interestRate}% de juros · {loan.installments} parcela(s) · {loan.status === "paid" ? "Quitado" : "Ativo"}</small>
+                      </div>
+                      <strong>{money(loan.remainingAmount)}</strong>
+                    </div>
+                  ))}
+                  {!history.loans.length && <Empty icon={Wallet} text="Nenhum empréstimo registrado." />}
                 </>
               )}
             </section>
