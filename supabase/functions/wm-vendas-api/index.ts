@@ -353,21 +353,56 @@ Deno.serve(async (req) => {
     if (action === "finance_report") {
       const tenantId = sessionTenantId;
       const requestedStart = String(body.startDate || "");
-      const startDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedStart) ? requestedStart : new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString().slice(0,10);
-      const [cash, sales, paymentRows, pendingReceivables, paidBills] = await Promise.all([
-        db.from("wm_cash_entries").select("id,kind,category,description,amount,payment_method,occurred_at,source_type,source_id").eq("tenant_id",tenantId).gte("occurred_at",startDate).limit(200),
+      const startDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedStart)
+        ? requestedStart
+        : new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString().slice(0,10);
+      const [cash, sales, paymentRows, pendingReceivables, paidBills, loans, loanInstallments, loanPayments] = await Promise.all([
+        db.from("wm_cash_entries").select("id,kind,category,description,amount,payment_method,occurred_at,source_type,source_id").eq("tenant_id",tenantId).gte("occurred_at",startDate).limit(300),
         db.from("wm_sales").select("id,receipt_code,customer_id,quantity,total,discount,cost_total,payment_method,installments,sold_at,wm_products(name,sale_price),wm_customers(name,phone)").eq("tenant_id",tenantId).gte("sold_at",startDate),
         db.from("wm_receivable_payments").select("id,receivable_id,customer_id,amount,paid_at,payment_method,notes,wm_customers(name,phone),wm_receivables(sale_id,installment_number,amount,due_date)").eq("tenant_id",tenantId).gte("paid_at",startDate).order("paid_at",{ascending:false}),
         db.from("wm_receivables").select("id,sale_id,amount,due_date,paid_at,status,installment_number,wm_customers(name)").eq("tenant_id",tenantId).eq("status","pending").order("due_date"),
-        db.from("wm_supplier_bills").select("id,amount,paid_at,supplier_name").eq("tenant_id",tenantId).eq("status","paid").gte("paid_at",startDate)
+        db.from("wm_supplier_bills").select("id,amount,paid_at,supplier_name").eq("tenant_id",tenantId).eq("status","paid").gte("paid_at",startDate),
+        db.from("wm_loans").select("id,customer_id,principal,interest_rate,interest_amount,total_amount,start_date,due_date,installments,frequency,status,notes,wm_customers(name,phone)").eq("tenant_id",tenantId).order("created_at",{ascending:false}).limit(200),
+        db.from("wm_loan_installments").select("id,loan_id,installment_number,due_date,amount,status,paid_at").eq("tenant_id",tenantId).order("due_date"),
+        db.from("wm_loan_payments").select("id,loan_id,installment_id,customer_id,amount,paid_at,payment_method,notes,wm_customers(name,phone)").eq("tenant_id",tenantId).gte("paid_at",startDate).order("paid_at",{ascending:false})
       ]);
-      for (const result of [cash,sales,paymentRows,pendingReceivables,paidBills]) if (result.error) throw result.error;
-      const manual = (cash.data || []).filter((item:any)=>item.source_type!=="receivable_payment"), saleRows = sales.data || [], paidRows = paymentRows.data || [], pendingRows = pendingReceivables.data || [], billRows = paidBills.data || [];
+      for (const result of [cash,sales,paymentRows,pendingReceivables,paidBills,loans,loanInstallments,loanPayments]) if (result.error) throw result.error;
+
+      const cashRows = cash.data || [];
+      const manual = cashRows.filter((item:any)=>!["receivable_payment","loan","loan_payment"].includes(item.source_type));
+      const saleRows = sales.data || [];
+      const paidRows = paymentRows.data || [];
+      const pendingRows = pendingReceivables.data || [];
+      const billRows = paidBills.data || [];
+      const loanRows = loans.data || [];
+      const loanInstallmentRows = loanInstallments.data || [];
+      const loanPaymentRows = loanPayments.data || [];
       const instantRows = saleRows.filter((sale:any)=>sale.payment_method!=="parcelado");
-      const instantSales = instantRows.reduce((sum:number,sale:any)=>sum+Number(sale.total),0), installmentReceipts = paidRows.reduce((sum:number,item:any)=>sum+Number(item.amount),0), outstanding = pendingRows.reduce((sum:number,item:any)=>sum+Number(item.amount),0);
-      const manualIncome = manual.filter((item:any)=>item.kind==="income").reduce((sum:number,item:any)=>sum+Number(item.amount),0), manualExpense = manual.filter((item:any)=>item.kind==="expense").reduce((sum:number,item:any)=>sum+Number(item.amount),0), supplierExpense = billRows.reduce((sum:number,item:any)=>sum+Number(item.amount),0);
-      const totalSales = saleRows.reduce((sum:number,sale:any)=>sum+Number(sale.total),0), costOfGoods = saleRows.reduce((sum:number,sale:any)=>sum+Number(sale.cost_total),0), income = instantSales + installmentReceipts + manualIncome, expenses = manualExpense + supplierExpense;
-      const movements = [...manual.map((item:any)=>({id:`manual-${item.id}`,kind:item.kind,category:item.category,description:item.description,amount:Number(item.amount),paymentMethod:item.payment_method,occurredAt:item.occurred_at})),...instantRows.map((sale:any)=>({id:`sale-${sale.id}`,kind:"income",category:"Venda",description:sale.wm_products?.name||"Venda à vista",amount:Number(sale.total),paymentMethod:sale.payment_method,occurredAt:sale.sold_at})),...paidRows.map((item:any)=>({id:`received-${item.id}`,kind:"income",category:"Parcela recebida",description:`${item.wm_customers?.name||"Cliente"} - parcela ${item.wm_receivables?.installment_number||""}`.trim(),amount:Number(item.amount),paymentMethod:item.payment_method||"outro",occurredAt:item.paid_at,sourceType:"receivable_payment",sourceId:item.id})),...pendingRows.map((item:any)=>({id:`pending-${item.id}`,kind:"pending",category:"A receber",description:`${item.wm_customers?.name||"Cliente"} - parcela ${item.installment_number}`,amount:Number(item.amount),paymentMethod:"parcelado",occurredAt:`${item.due_date}T12:00:00Z`})),...billRows.map((item:any)=>({id:`bill-${item.id}`,kind:"expense",category:"Fornecedor",description:item.supplier_name||"Boleto pago",amount:Number(item.amount),paymentMethod:"boleto",occurredAt:item.paid_at}))].sort((a:any,b:any)=>new Date(b.occurredAt).getTime()-new Date(a.occurredAt).getTime()).slice(0,200);
+      const instantSales = instantRows.reduce((sum:number,sale:any)=>sum+Number(sale.total),0);
+      const installmentReceipts = paidRows.reduce((sum:number,item:any)=>sum+Number(item.amount),0);
+      const loanReceipts = loanPaymentRows.reduce((sum:number,item:any)=>sum+Number(item.amount),0);
+      const outstanding = pendingRows.reduce((sum:number,item:any)=>sum+Number(item.amount),0);
+      const loanOutstanding = loanInstallmentRows.reduce((sum:number,item:any)=>sum + (item.status==="pending" ? Number(item.amount) : 0),0);
+      const loanPrincipalActive = loanRows.filter((l:any)=>l.status==="active").reduce((sum:number,l:any)=>sum+Number(l.principal),0);
+      const loanOutflow = cashRows.filter((item:any)=>item.source_type==="loan" && item.kind==="expense").reduce((sum:number,item:any)=>sum+Number(item.amount),0);
+      const manualIncome = manual.filter((item:any)=>item.kind==="income").reduce((sum:number,item:any)=>sum+Number(item.amount),0);
+      const manualExpense = manual.filter((item:any)=>item.kind==="expense").reduce((sum:number,item:any)=>sum+Number(item.amount),0);
+      const supplierExpense = billRows.reduce((sum:number,item:any)=>sum+Number(item.amount),0);
+      const totalSales = saleRows.reduce((sum:number,sale:any)=>sum+Number(sale.total),0);
+      const costOfGoods = saleRows.reduce((sum:number,sale:any)=>sum+Number(sale.cost_total),0);
+      const income = instantSales + installmentReceipts + loanReceipts + manualIncome;
+      const expenses = manualExpense + supplierExpense;
+      const movements = [
+        ...manual.map((item:any)=>({id:`manual-${item.id}`,kind:item.kind,category:item.category,description:item.description,amount:Number(item.amount),paymentMethod:item.payment_method,occurredAt:item.occurred_at})),
+        ...cashRows.filter((item:any)=>item.source_type==="loan").map((item:any)=>({id:`loan-${item.id}`,kind:"expense",category:"Empréstimo concedido",description:item.description,amount:Number(item.amount),paymentMethod:item.payment_method,occurredAt:item.occurred_at})),
+        ...instantRows.map((sale:any)=>({id:`sale-${sale.id}`,kind:"income",category:"Venda",description:sale.wm_products?.name||"Venda à vista",amount:Number(sale.total),paymentMethod:sale.payment_method,occurredAt:sale.sold_at})),
+        ...paidRows.map((item:any)=>({id:`received-${item.id}`,kind:"income",category:"Parcela recebida",description:`${item.wm_customers?.name||"Cliente"} - parcela ${item.wm_receivables?.installment_number||""}`.trim(),amount:Number(item.amount),paymentMethod:item.payment_method||"outro",occurredAt:item.paid_at,sourceType:"receivable_payment",sourceId:item.id})),
+        ...loanPaymentRows.map((item:any)=>({id:`loan-payment-${item.id}`,kind:"income",category:"Empréstimo recebido",description:`${item.wm_customers?.name||"Cliente"} - parcela ${item.loan_id ? item.loan_id : ""}`.trim(),amount:Number(item.amount),paymentMethod:item.payment_method||"outro",occurredAt:item.paid_at,sourceType:"loan_payment",sourceId:item.id})),
+        ...pendingRows.map((item:any)=>({id:`pending-${item.id}`,kind:"pending",category:"A receber",description:`${item.wm_customers?.name||"Cliente"} - parcela ${item.installment_number}`,amount:Number(item.amount),paymentMethod:"parcelado",occurredAt:`${item.due_date}T12:00:00Z`})),
+        ...loanInstallmentRows.filter((item:any)=>item.status==="pending").map((item:any)=>({id:`loan-pending-${item.id}`,kind:"pending",category:"Empréstimo a receber",description:`Empréstimo #${item.loan_id} - parcela ${item.installment_number}`,amount:Number(item.amount),paymentMethod:"empréstimo",occurredAt:`${item.due_date}T12:00:00Z`})),
+        ...billRows.map((item:any)=>({id:`bill-${item.id}`,kind:"expense",category:"Fornecedor",description:item.supplier_name||"Boleto pago",amount:Number(item.amount),paymentMethod:"boleto",occurredAt:item.paid_at}))
+      ].sort((a:any,b:any)=>new Date(b.occurredAt).getTime()-new Date(a.occurredAt).getTime()).slice(0,300);
+
       const receiptMap = new Map<string,any>();
       for (const sale of saleRows as any[]) {
         const code = String(sale.receipt_code || `sale-${sale.id}`);
@@ -379,7 +414,63 @@ Deno.serve(async (req) => {
       const receivableRows=[...paidRows,...pendingRows];
       for (const receipt of receiptMap.values()) receipt.installmentDates=receivableRows.filter((item:any)=>Number(item.sale_id)===receipt.firstSaleId).map((item:any)=>({number:Number(item.installment_number),dueDate:item.due_date,amount:Number(item.amount),status:item.status})).sort((a:any,b:any)=>a.number-b.number);
       const receipts=Array.from(receiptMap.values()).map(({firstSaleId,...receipt})=>receipt).sort((a:any,b:any)=>new Date(b.soldAt).getTime()-new Date(a.soldAt).getTime());
-      return reply({startDate,summary:{income,expenses,balance:income-expenses,sales:totalSales,outstanding,costOfGoods,estimatedProfit:totalSales-costOfGoods-manualExpense},entries:movements,receipts});
+
+      const loansPayload = loanRows.map((loan:any)=>{
+        const installments = loanInstallmentRows.filter((item:any)=>Number(item.loan_id)===Number(loan.id)).map((item:any)=>{
+          const paid = loanPaymentRows.filter((p:any)=>Number(p.installment_id)===Number(item.id)).reduce((sum:number,p:any)=>sum+Number(p.amount),0);
+          return {id:item.id,number:Number(item.installment_number),dueDate:item.due_date,amount:Number(item.amount),paidAmount:paid,remainingAmount:Math.max(0,Number(item.amount)-paid),status:paid>=Number(item.amount)-0.005?"paid":"pending",paidAt:item.paid_at||null};
+        });
+        const paidAmount = installments.reduce((sum:number,i:any)=>sum+i.paidAmount,0);
+        const remainingAmount = installments.reduce((sum:number,i:any)=>sum+i.remainingAmount,0);
+        const derivedStatus = remainingAmount<=0 ? "paid" : loan.status==="cancelled" ? "cancelled" : "active";
+        return {id:Number(loan.id),customerId:Number(loan.customer_id),customerName:loan.wm_customers?.name||"Cliente",customerPhone:loan.wm_customers?.phone||"",principal:Number(loan.principal),interestRate:Number(loan.interest_rate),interestAmount:Number(loan.interest_amount),totalAmount:Number(loan.total_amount),startDate:loan.start_date,dueDate:loan.due_date,installments:Number(loan.installments),frequency:loan.frequency,status:derivedStatus,notes:loan.notes||"",paidAmount,remainingAmount,installmentsDetail:installments};
+      });
+      return reply({
+        startDate,
+        summary:{
+          income,expenses,balance:income + loanReceipts - expenses - loanOutflow,
+          sales:totalSales,outstanding,costOfGoods,
+          estimatedProfit:totalSales-costOfGoods-manualExpense,
+          loanOutstanding,loanPrincipalActive,loanPaymentsReceived:loanReceipts,loanOutflow
+        },
+        entries:movements,receipts,loans:loansPayload
+      });
+    }
+    if (action === "create_loan") {
+      const customerId=Number(body.customerId);
+      const principalRaw=String(body.principal ?? "").trim();
+      const principal=Number(principalRaw.includes(",") ? principalRaw.replace(/\./g,"").replace(",",".") : principalRaw);
+      const interestRate=Number(body.interestRate||0);
+      const installments=Math.max(1,Math.min(120,Number(body.installments||1)));
+      const frequency=String(body.frequency||"unico");
+      const startDate=String(body.startDate||new Date().toISOString().slice(0,10));
+      const firstDueDate=String(body.firstDueDate||startDate);
+      if(!Number.isInteger(customerId)||customerId<1||!Number.isFinite(principal)||principal<=0||!Number.isFinite(interestRate)||interestRate<0||!Number.isInteger(installments)||!/^\d{4}-\d{2}-\d{2}$/.test(startDate)||!/^\d{4}-\d{2}-\d{2}$/.test(firstDueDate)) return reply({error:"Informe cliente, valor, juros e datas válidos."},400);
+      if(frequency==="unico" && installments!==1) return reply({error:"Empréstimo único deve ter 1 parcela."},400);
+      const {data,error}=await db.rpc("wm_create_loan",{p_tenant_id:sessionTenantId,p_customer_id:customerId,p_principal:principal,p_interest_rate:interestRate,p_start_date:startDate,p_first_due_date:firstDueDate,p_installments:installments,p_frequency:frequency,p_notes:String(body.notes||"")});
+      if(error)return reply({error:error.message},400);
+      await audit(session,"loan.created","loan",String(data?.loanId||""),{customerId,principal,interestRate,installments});
+      return reply({message:"Empréstimo cadastrado e lançado no Caixa.",loan:data},201);
+    }
+    if (action === "record_loan_payment") {
+      const installmentId=Number(body.installmentId);
+      const customerId=Number(body.customerId);
+      const raw=String(body.amount ?? "").trim();
+      const amount=Number(raw.includes(",") ? raw.replace(/\./g,"").replace(",",".") : raw);
+      if(!Number.isInteger(installmentId)||installmentId<1||!Number.isInteger(customerId)||customerId<1||!Number.isFinite(amount)||amount<=0) return reply({error:"Informe cliente, parcela e valor válidos."},400);
+      const {data:target,error:targetError}=await db.from("wm_loan_installments").select("id,loan_id,tenant_id").eq("tenant_id",sessionTenantId).eq("id",installmentId).maybeSingle();
+      if(targetError)throw targetError;
+      if(!target)return reply({error:"Parcela do empréstimo não encontrada. Atualize a tela."},404);
+      const {data:loan,error:loanError}=await db.from("wm_loans").select("id,customer_id").eq("tenant_id",sessionTenantId).eq("id",target.loan_id).maybeSingle();
+      if(loanError)throw loanError;
+      if(!loan||Number(loan.customer_id)!==customerId)return reply({error:"O cliente desta parcela não corresponde à seleção. Atualize a tela."},409);
+      const paidDate=String(body.paidAt||"").trim();
+      let paidAt=new Date().toISOString();
+      if(paidDate){const parsed=new Date(paidDate);if(Number.isNaN(parsed.getTime()))return reply({error:"Data de pagamento inválida."},400);paidAt=parsed.toISOString();}
+      const {data,error}=await db.rpc("wm_record_loan_payment",{p_tenant_id:sessionTenantId,p_installment_id:installmentId,p_amount:amount,p_payment_method:String(body.paymentMethod||"dinheiro"),p_paid_at:paidAt,p_notes:String(body.notes||"")});
+      if(error)return reply({error:error.message},400);
+      await audit(session,"loan.payment_recorded","loan",String(target.loan_id),{installmentId,customerId,amount,paymentMethod:String(body.paymentMethod||"dinheiro")});
+      return reply({message:data?.remainingAmount>0?"Pagamento do empréstimo registrado.":"Parcela do empréstimo quitada.",receipt:data});
     }
     if (action === "create_cash_entry") {
       const tenantId = sessionTenantId;
@@ -656,13 +747,16 @@ Deno.serve(async (req) => {
     if (action === "customer_history") {
       const customerId=Number(body.customerId);
       if(!Number.isInteger(customerId)||customerId<1)return reply({error:"Cliente inválido."},400);
-      const [{data:customer,error:customerError},{data:receivables,error:receivableError},{data:sales,error:salesError},{data:payments,error:paymentsError}]=await Promise.all([
+      const [{data:customer,error:customerError},{data:receivables,error:receivableError},{data:sales,error:salesError},{data:payments,error:paymentsError},{data:loans,error:loansError},{data:loanInstallments,error:loanInstallmentsError},{data:loanPayments,error:loanPaymentsError}]=await Promise.all([
         db.from("wm_customers").select("id,name,phone").eq("tenant_id",sessionTenantId).eq("id",customerId).maybeSingle(),
         db.from("wm_receivables").select("id,sale_id,installment_number,amount,due_date,status,paid_at").eq("tenant_id",sessionTenantId).eq("customer_id",customerId).order("due_date",{ascending:false}),
         db.from("wm_sales").select("id,total,discount,sold_at,payment_method,installments,receipt_code").eq("tenant_id",sessionTenantId).eq("customer_id",customerId).order("sold_at",{ascending:false}),
-        db.from("wm_receivable_payments").select("id,receivable_id,customer_id,amount,paid_at,payment_method,notes,entry_type,created_at").eq("tenant_id",sessionTenantId).eq("customer_id",customerId).order("paid_at",{ascending:false})
+        db.from("wm_receivable_payments").select("id,receivable_id,customer_id,amount,paid_at,payment_method,notes,entry_type,created_at").eq("tenant_id",sessionTenantId).eq("customer_id",customerId).order("paid_at",{ascending:false}),
+        db.from("wm_loans").select("id,principal,interest_rate,interest_amount,total_amount,start_date,due_date,installments,frequency,status,notes").eq("tenant_id",sessionTenantId).eq("customer_id",customerId).order("created_at",{ascending:false}),
+        db.from("wm_loan_installments").select("id,loan_id,installment_number,due_date,amount,status,paid_at").eq("tenant_id",sessionTenantId).order("due_date"),
+        db.from("wm_loan_payments").select("id,loan_id,installment_id,customer_id,amount,paid_at,payment_method,notes").eq("tenant_id",sessionTenantId).eq("customer_id",customerId).order("paid_at",{ascending:false})
       ]);
-      for(const result of [customerError,receivableError,salesError,paymentsError])if(result)throw result;
+      for(const result of [customerError,receivableError,salesError,paymentsError,loansError,loanInstallmentsError,loanPaymentsError])if(result)throw result;
       if(!customer)return reply({error:"Cliente não encontrado."},404);
       const paymentRows=payments||[];
       const paidByReceivable=new Map<number,number>();
@@ -718,12 +812,27 @@ Deno.serve(async (req) => {
       const totalPurchased=(sales||[]).reduce((sum:number,sale:any)=>sum+Number(sale.total||0),0);
       const totalPaid=historyPayments.reduce((sum:number,p:any)=>sum+Number(p.paidAmount||0),0);
       const openBalance=installments.reduce((sum:number,item:any)=>sum+Number(item.remainingAmount||0),0);
+      const loanPaymentRows=(loanPayments||[]).map((p:any)=>({
+        paymentId:Number(p.id),loanId:Number(p.loan_id),installmentId:Number(p.installment_id),
+        paidAmount:Number(p.amount),paidAt:p.paid_at,paymentMethod:p.payment_method||"dinheiro",notes:p.notes||""
+      }));
+      const loanHistory=(loans||[]).map((loan:any)=>{
+        const details=(loanInstallments||[]).filter((i:any)=>Number(i.loan_id)===Number(loan.id)).map((i:any)=>{
+          const paid=loanPaymentRows.filter((p:any)=>p.installmentId===Number(i.id)).reduce((sum:number,p:any)=>sum+p.paidAmount,0);
+          return {id:Number(i.id),number:Number(i.installment_number),dueDate:i.due_date,amount:Number(i.amount),paidAmount:paid,remainingAmount:Math.max(0,Number(i.amount)-paid),status:paid>=Number(i.amount)-0.005?"paid":"pending",paidAt:i.paid_at||null};
+        });
+        return {id:Number(loan.id),principal:Number(loan.principal),interestRate:Number(loan.interest_rate),interestAmount:Number(loan.interest_amount),totalAmount:Number(loan.total_amount),startDate:loan.start_date,dueDate:loan.due_date,installments:Number(loan.installments),frequency:loan.frequency,status:loan.status,notes:loan.notes||"",paidAmount:details.reduce((sum:number,i:any)=>sum+i.paidAmount,0),remainingAmount:details.reduce((sum:number,i:any)=>sum+i.remainingAmount,0),installmentsDetail:details};
+      });
+      const loanPaidTotal=loanPaymentRows.reduce((sum:number,p:any)=>sum+p.paidAmount,0);
+      const loanOpenTotal=loanHistory.reduce((sum:number,l:any)=>sum+l.remainingAmount,0);
       return reply({
         customer:{id:customer.id,name:customer.name,phone:customer.phone||""},
-        summary:{totalPurchased,totalPaid,openBalance,purchasesCount:purchaseRows.length,pendingInstallments:installments.filter((i:any)=>i.remainingAmount>0).length},
+        summary:{totalPurchased,totalPaid,openBalance,purchasesCount:purchaseRows.length,pendingInstallments:installments.filter((i:any)=>i.remainingAmount>0).length,loanPaidTotal,loanOpenTotal,loanTotalBorrowed:loanHistory.reduce((sum:number,l:any)=>sum+l.principal,0)},
         purchases:purchaseRows,
         installments,
-        payments:historyPayments
+        payments:historyPayments,
+        loans:loanHistory,
+        loanPayments:loanPaymentRows
       });
     }
     if (action === "create_supplier_bill") {
