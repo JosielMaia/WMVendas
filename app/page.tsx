@@ -114,6 +114,9 @@ type CustomerHistory = {
     openBalance: number;
     purchasesCount: number;
     pendingInstallments: number;
+    loanPaidTotal: number;
+    loanOpenTotal: number;
+    loanTotalBorrowed: number;
   };
   installments: Array<{
     id: number;
@@ -127,6 +130,16 @@ type CustomerHistory = {
     paidAt?: string | null;
   }>;
   payments: CustomerPayment[];
+  loans: FinanceLoan[];
+  loanPayments: Array<{
+    paymentId: number;
+    loanId: number;
+    installmentId: number;
+    paidAmount: number;
+    paidAt: string;
+    paymentMethod: string;
+    notes: string;
+  }>;
   purchases: Array<{
     saleId: number;
     total: number;
@@ -196,6 +209,49 @@ type SaleReceipt = {
     status: string;
   }[];
 };
+type FinanceLoanInstallment = {
+  id: number;
+  number: number;
+  dueDate: string;
+  amount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  status: string;
+  paidAt?: string | null;
+};
+type FinanceLoan = {
+  id: number;
+  customerId: number;
+  customerName: string;
+  customerPhone: string;
+  principal: number;
+  interestRate: number;
+  interestAmount: number;
+  totalAmount: number;
+  startDate: string;
+  dueDate: string;
+  installments: number;
+  frequency: string;
+  status: string;
+  notes: string;
+  paidAmount: number;
+  remainingAmount: number;
+  installmentsDetail: FinanceLoanInstallment[];
+};
+type FinancePaymentReceipt = {
+  id: string;
+  kind: "sale" | "loan";
+  paymentId: number;
+  customerName: string;
+  customerPhone: string;
+  amount: number;
+  paidAt: string;
+  installmentNumber?: number | null;
+  dueDate?: string | null;
+  paymentMethod: string;
+  remainingAmount: number;
+  label: string;
+};
 type FinanceReport = {
   startDate: string;
   summary: {
@@ -209,6 +265,8 @@ type FinanceReport = {
   };
   entries: CashEntry[];
   receipts: SaleReceipt[];
+  paymentReceipts: FinancePaymentReceipt[];
+  loans: FinanceLoan[];
 };
 type Dashboard = {
   investment: number;
@@ -614,7 +672,7 @@ export default function HomePage() {
     ...(canManage
       ? ([
           ["fornecedores", ReceiptText, "Boletos"],
-          ["financeiro", Wallet, "Caixa"],
+          ["financeiro", Wallet, "Financeiro"],
           ["loja", Store, "Loja"],
           ["equipe", UserPlus, "Equipe"],
         ] as [string, any, string][])
@@ -773,7 +831,19 @@ export default function HomePage() {
                 />
               )}
               {view === "financeiro" && (
-                <FinanceView api={api} notify={notify} />
+                <FinanceView
+                  api={api}
+                  notify={notify}
+                  customers={data.customers}
+                  openCustomerHistory={async (customer) => {
+                    try {
+                      const j = await api("customer_history", { customerId: customer.id });
+                      setCustomerHistory(j as CustomerHistory);
+                    } catch (e) {
+                      notify(e instanceof Error ? e.message : "Não foi possível carregar o histórico.");
+                    }
+                  }}
+                />
               )}
               {view === "loja" && <StoreAdmin api={api} notify={notify} />}
               {view === "equipe" && canManage && (
@@ -2254,29 +2324,43 @@ function SupplierBillsView({
 function FinanceView({
   api,
   notify,
+  customers,
+  openCustomerHistory,
 }: {
   api: (action: string, payload?: Record<string, unknown>) => Promise<any>;
   notify: (message: string) => void;
+  customers: Customer[];
+  openCustomerHistory: (customer: Customer) => void;
 }) {
-  const [report, setReport] = useState<FinanceReport | null>(null),
-    [loading, setLoading] = useState(true),
-    [showForm, setShowForm] = useState(false),
-    [saving, setSaving] = useState(false);
+  const [report, setReport] = useState<FinanceReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState("visao");
+  const [showEntryForm, setShowEntryForm] = useState(false);
+  const [showLoanForm, setShowLoanForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [selectedLoanInstallment, setSelectedLoanInstallment] = useState<{
+    loan: FinanceLoan;
+    installment: FinanceLoanInstallment;
+  } | null>(null);
+  const [loanPaymentAmount, setLoanPaymentAmount] = useState("");
+  const [loanPaymentMethod, setLoanPaymentMethod] = useState("dinheiro");
+  const [loanPaymentDate, setLoanPaymentDate] = useState(new Date().toISOString().slice(0, 10));
+  const [loanPaymentNotes, setLoanPaymentNotes] = useState("");
+  const [loanPaymentConfirmed, setLoanPaymentConfirmed] = useState(false);
+  const [loanPaymentError, setLoanPaymentError] = useState("");
+
   async function refresh() {
     setLoading(true);
     try {
       setReport(await api("finance_report"));
     } catch (e) {
-      notify(
-        e instanceof Error ? e.message : "Não foi possível carregar o caixa.",
-      );
+      notify(e instanceof Error ? e.message : "Não foi possível carregar o financeiro.");
     } finally {
       setLoading(false);
     }
   }
-  useEffect(() => {
-    void refresh();
-  }, []);
+  useEffect(() => { void refresh(); }, []);
+
   async function saveEntry(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSaving(true);
@@ -2284,7 +2368,7 @@ function FinanceView({
       const values = Object.fromEntries(new FormData(e.currentTarget));
       await api("create_cash_entry", values);
       notify("Lançamento salvo no caixa.");
-      setShowForm(false);
+      setShowEntryForm(false);
       await refresh();
     } catch (err) {
       notify(err instanceof Error ? err.message : "Não foi possível salvar.");
@@ -2292,274 +2376,371 @@ function FinanceView({
       setSaving(false);
     }
   }
+
+  async function saveLoan(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const values = Object.fromEntries(new FormData(e.currentTarget));
+      await api("create_loan", values);
+      notify("Empréstimo cadastrado e lançado no Caixa.");
+      setShowLoanForm(false);
+      await refresh();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Não foi possível cadastrar o empréstimo.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openLoanPayment(loan: FinanceLoan, installment: FinanceLoanInstallment) {
+    setSelectedLoanInstallment({ loan, installment });
+    setLoanPaymentAmount(installment.remainingAmount.toFixed(2).replace(".", ","));
+    setLoanPaymentMethod("dinheiro");
+    setLoanPaymentDate(new Date().toISOString().slice(0, 10));
+    setLoanPaymentNotes("");
+    setLoanPaymentConfirmed(false);
+    setLoanPaymentError("");
+  }
+
+  async function confirmLoanPayment() {
+    if (!selectedLoanInstallment) return;
+    if (!loanPaymentConfirmed) {
+      setLoanPaymentError("Confirme a cliente e a parcela antes de registrar o pagamento.");
+      return;
+    }
+    const normalized = loanPaymentAmount.includes(",")
+      ? loanPaymentAmount.replace(/\./g, "").replace(",", ".")
+      : loanPaymentAmount;
+    const amount = Number(normalized);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setLoanPaymentError("Informe um valor recebido válido.");
+      return;
+    }
+    if (amount > selectedLoanInstallment.installment.remainingAmount + 0.005) {
+      setLoanPaymentError("O pagamento não pode ser maior que o saldo da parcela.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api("record_loan_payment", {
+        installmentId: selectedLoanInstallment.installment.id,
+        customerId: selectedLoanInstallment.loan.customerId,
+        amount,
+        paymentMethod: loanPaymentMethod,
+        paidAt: new Date(loanPaymentDate + "T12:00:00").toISOString(),
+        notes: loanPaymentNotes,
+      });
+      notify("Pagamento do empréstimo registrado no Caixa.");
+      setSelectedLoanInstallment(null);
+      await refresh();
+    } catch (err) {
+      setLoanPaymentError(err instanceof Error ? err.message : "Não foi possível registrar o pagamento.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const summary = report?.summary || {
-    income: 0,
-    expenses: 0,
-    balance: 0,
-    sales: 0,
-    outstanding: 0,
-    costOfGoods: 0,
-    estimatedProfit: 0,
+    income: 0, expenses: 0, balance: 0, sales: 0, outstanding: 0,
+    costOfGoods: 0, estimatedProfit: 0, loanOutstanding: 0,
+    loanPrincipalActive: 0, loanPaymentsReceived: 0, loanOutflow: 0,
   };
+  const loans = report?.loans || [];
+  const loanOverdue = loans.reduce((sum, loan) =>
+    sum + loan.installmentsDetail.filter((i) => i.remainingAmount > 0 && i.dueDate < new Date().toISOString().slice(0, 10)).length, 0);
+  const loanDueSoon = loans.reduce((sum, loan) =>
+    sum + loan.installmentsDetail.filter((i) => {
+      if (i.remainingAmount <= 0) return false;
+      const days = Math.ceil((new Date(i.dueDate + "T12:00:00").getTime() - Date.now()) / 86400000);
+      return days >= 0 && days <= 3;
+    }).length, 0);
+
+  const methodLabels: Record<string, string> = {
+    dinheiro: "Dinheiro", pix: "PIX", cartao: "Cartão",
+    transferencia: "Transferência", outro: "Outro",
+  };
+  const loanFrequencyLabels: Record<string, string> = {
+    unico: "Único", semanal: "Semanal", quinzenal: "Quinzenal", mensal: "Mensal",
+  };
+
   return (
     <>
       <PageTitle
         eyebrow="GESTÃO FINANCEIRA"
-        title="Caixa da loja"
+        title="Financeiro WM Vendas"
         action={
-          <Button onClick={() => setShowForm((v) => !v)}>
-            <Plus /> {showForm ? "Fechar" : "Novo lançamento"}
-          </Button>
+          <div className="page-actions">
+            {tab === "emprestimos" && (
+              <Button onClick={() => setShowLoanForm((v) => !v)}>
+                <Plus /> {showLoanForm ? "Fechar" : "Novo empréstimo"}
+              </Button>
+            )}
+            {tab === "movimentacoes" && (
+              <Button onClick={() => setShowEntryForm((v) => !v)}>
+                <Plus /> {showEntryForm ? "Fechar" : "Novo lançamento"}
+              </Button>
+            )}
+          </div>
         }
       />
-      <div className="stats finance-stats">
-        <article className="stat primary">
-          <small>Vendas do mês</small>
-          <strong>{money(summary.sales)}</strong>
-          <span>total vendido no período</span>
-        </article>
-        <article className="stat">
-          <small>Entradas recebidas</small>
-          <strong>{money(summary.income)}</strong>
-          <span>à vista e parcelas pagas</span>
-        </article>
-        <article className="stat">
-          <small>A receber</small>
-          <strong>{money(summary.outstanding)}</strong>
-          <span>parcelas ainda pendentes</span>
-        </article>
-        <article className="stat">
-          <small>Despesas pagas</small>
-          <strong>{money(summary.expenses)}</strong>
-          <span>boletos e lançamentos</span>
-        </article>
-        <article className="stat">
-          <small>Saldo do caixa</small>
-          <strong>{money(summary.balance)}</strong>
-          <span>recebimentos menos pagamentos</span>
-        </article>
-        <article className="stat">
-          <small>Lucro estimado</small>
-          <strong>{money(summary.estimatedProfit)}</strong>
-          <span>vendas menos custo e despesas manuais</span>
-        </article>
-      </div>
-      {showForm && (
-        <section className="panel finance-form">
-          <div className="panel-head">
-            <div>
-              <small>NOVO LANÇAMENTO</small>
-              <h2>Registrar no caixa</h2>
-            </div>
+
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList>
+          <TabsTrigger value="visao">Visão geral</TabsTrigger>
+          <TabsTrigger value="emprestimos">Empréstimos</TabsTrigger>
+          <TabsTrigger value="clientes">Clientes</TabsTrigger>
+          <TabsTrigger value="movimentacoes">Movimentações</TabsTrigger>
+          <TabsTrigger value="comprovantes">Comprovantes</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {tab === "visao" && (
+        <>
+          <div className="stats finance-stats">
+            <article className="stat primary"><small>Vendas</small><strong>{money(summary.sales)}</strong><span>no período</span></article>
+            <article className="stat"><small>Recebido</small><strong>{money(summary.income)}</strong><span>vendas e empréstimos</span></article>
+            <article className="stat"><small>A receber</small><strong>{money(summary.outstanding + summary.loanOutstanding)}</strong><span>compras + empréstimos</span></article>
+            <article className="stat"><small>Saldo do Caixa</small><strong>{money(summary.balance)}</strong><span>entradas menos saídas</span></article>
+            <article className="stat"><small>Empréstimos ativos</small><strong>{money(summary.loanPrincipalActive)}</strong><span>principal emprestado</span></article>
+            <article className="stat"><small>Lucro estimado</small><strong>{money(summary.estimatedProfit)}</strong><span>sem tratar empréstimo como lucro</span></article>
           </div>
-          <form onSubmit={saveEntry} className="form">
-            <div className="field">
-              <Label>Tipo</Label>
-              <Select name="kind" defaultValue="expense">
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="income">Entrada</SelectItem>
-                  <SelectItem value="expense">Despesa</SelectItem>
-                </SelectContent>
-              </Select>
+          <div className="stats mini">
+            <article className="stat"><small>Juros contratados</small><strong>{money(loans.reduce((s,l)=>s+l.interestAmount,0))}</strong></article>
+            <article className="stat"><small>Recebido de empréstimos</small><strong>{money(summary.loanPaymentsReceived)}</strong></article>
+            <article className="stat"><small>A vencer em 3 dias</small><strong>{loanDueSoon + (report?.entries.filter((e)=>e.kind==="pending").length || 0)}</strong></article>
+            <article className="stat"><small>Em atraso</small><strong>{loanOverdue}</strong></article>
+          </div>
+          {(loanOverdue > 0 || loanDueSoon > 0) && (
+            <section className="panel">
+              <div className="panel-head"><div><small>ATENÇÃO</small><h2>Alertas financeiros</h2></div></div>
+              {loanOverdue > 0 && <p className="customer-alert">🔴 {loanOverdue} parcela(s) de empréstimo em atraso.</p>}
+              {loanDueSoon > 0 && <p className="customer-alert">🟠 {loanDueSoon} parcela(s) de empréstimo vencem nos próximos 3 dias.</p>}
+            </section>
+          )}
+        </>
+      )}
+
+      {tab === "emprestimos" && (
+        <>
+          {showLoanForm && (
+            <section className="panel finance-form">
+              <div className="panel-head"><div><small>NOVO EMPRÉSTIMO</small><h2>Registrar empréstimo</h2></div></div>
+              <form onSubmit={saveLoan} className="form">
+                <div className="field">
+                  <Label>Cliente</Label>
+                  <Select name="customerId" required>
+                    <SelectTrigger><SelectValue placeholder="Selecione a cliente" /></SelectTrigger>
+                    <SelectContent>{customers.map((c)=><SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div className="field">
+                  <Label>Valor emprestado</Label>
+                  <Input name="principal" inputMode="decimal" placeholder="0,00" required />
+                </div>
+                <div className="field">
+                  <Label>Juros (%)</Label>
+                  <Input name="interestRate" type="number" min="0" step="0.01" defaultValue="0" required />
+                </div>
+                <div className="field">
+                  <Label>Data do empréstimo</Label>
+                  <Input name="startDate" type="date" defaultValue={new Date().toISOString().slice(0,10)} required />
+                </div>
+                <div className="field">
+                  <Label>Primeiro vencimento</Label>
+                  <Input name="firstDueDate" type="date" defaultValue={new Date(Date.now()+30*86400000).toISOString().slice(0,10)} required />
+                </div>
+                <div className="field">
+                  <Label>Parcelas</Label>
+                  <Input name="installments" type="number" min="1" max="120" defaultValue="1" required />
+                </div>
+                <div className="field">
+                  <Label>Periodicidade</Label>
+                  <Select name="frequency" defaultValue="unico">
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unico">Único</SelectItem>
+                      <SelectItem value="semanal">Semanal</SelectItem>
+                      <SelectItem value="quinzenal">Quinzenal</SelectItem>
+                      <SelectItem value="mensal">Mensal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="field full">
+                  <Label>Observação</Label>
+                  <Input name="notes" placeholder="Ex.: finalidade ou acordo combinado" />
+                </div>
+                <div className="dialog-actions full">
+                  <Button type="button" variant="outline" onClick={()=>setShowLoanForm(false)}>Cancelar</Button>
+                  <Button type="submit" disabled={saving}>{saving ? <Loader2 className="spin" /> : <Check />} Cadastrar empréstimo</Button>
+                </div>
+              </form>
+            </section>
+          )}
+          <section className="panel">
+            <div className="panel-head">
+              <div><small>CARTEIRA DE EMPRÉSTIMOS</small><h2>{loans.length} empréstimo(s)</h2></div>
+              <Button variant="outline" onClick={refresh} disabled={loading}>{loading ? <Loader2 className="spin" /> : "Atualizar"}</Button>
             </div>
-            <div className="field">
-              <Label>Categoria</Label>
-              <Input
-                name="category"
-                placeholder="Ex.: transporte, embalagem"
-                required
-              />
-            </div>
-            <div className="field full">
-              <Label>Descrição</Label>
-              <Input
-                name="description"
-                placeholder="O que entrou ou foi pago?"
-                required
-              />
-            </div>
-            <div className="field">
-              <Label>Valor</Label>
-              <Input
-                name="amount"
-                type="number"
-                inputMode="decimal"
-                min="0.01"
-                step="0.01"
-                placeholder="0,00"
-                required
-              />
-            </div>
-            <div className="field">
-              <Label>Forma</Label>
-              <Select name="paymentMethod" defaultValue="pix">
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pix">PIX</SelectItem>
-                  <SelectItem value="cash">Dinheiro</SelectItem>
-                  <SelectItem value="card">Cartão</SelectItem>
-                  <SelectItem value="transfer">Transferência</SelectItem>
-                  <SelectItem value="other">Outro</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="field">
-              <Label>Data</Label>
-              <Input
-                name="occurredAt"
-                type="date"
-                defaultValue={new Date().toISOString().slice(0, 10)}
-                required
-              />
-            </div>
-            <div className="dialog-actions full">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setShowForm(false)}
-              >
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? <Loader2 className="spin" /> : <Check />} Salvar no
-                caixa
-              </Button>
-            </div>
-          </form>
+            {loans.map((loan)=>(
+              <article className="customer-card" key={loan.id}>
+                <header>
+                  <span className="avatar">{loan.customerName.slice(0,2).toUpperCase()}</span>
+                  <div><b>{loan.customerName}</b><small>Empréstimo #{loan.id} • {loanFrequencyLabels[loan.frequency] || loan.frequency}</small></div>
+                  <strong>{money(loan.remainingAmount)}</strong>
+                </header>
+                <div className="customer-metrics">
+                  <div><small>Emprestado</small><b>{money(loan.principal)}</b></div>
+                  <div><small>Juros</small><b>{loan.interestRate}% · {money(loan.interestAmount)}</b></div>
+                  <div><small>Total</small><b>{money(loan.totalAmount)}</b></div>
+                </div>
+                <div className="customer-badges">
+                  <span className={loan.status==="paid" ? "payment-status good" : "payment-status warning"}>{loan.status==="paid" ? "Quitado" : "Ativo"}</span>
+                  <span className="loyalty loyalty-prata">{loan.installments} parcela(s)</span>
+                </div>
+                <div className="list-panel">
+                  {loan.installmentsDetail.map((item)=>(
+                    <div className="history-row" key={item.id}>
+                      <div>
+                        <b>Parcela {item.number} · {money(item.amount)}</b>
+                        <small>Vencimento {dateBR(item.dueDate)} · {item.status==="paid" ? "Quitada" : "Saldo "+money(item.remainingAmount)}</small>
+                      </div>
+                      {item.remainingAmount > 0 ? (
+                        <div className="page-actions">
+                          {loan.customerPhone && (
+                            <a className="whatsapp" href={loanWhatsappLink(loan,item)} target="_blank" rel="noreferrer"><Send /> Cobrar</a>
+                          )}
+                          <Button variant="outline" onClick={()=>openLoanPayment(loan,item)}><Check /> Registrar pagamento</Button>
+                        </div>
+                      ) : <span className="payment-status good">Quitada</span>}
+                    </div>
+                  ))}
+                </div>
+              </article>
+            ))}
+            {!loans.length && <Empty icon={Wallet} text="Nenhum empréstimo cadastrado" />}
+          </section>
+        </>
+      )}
+
+      {tab === "clientes" && (
+        <section className="customer-grid">
+          {customers.map((customer)=>(
+            <article className="customer-card" key={customer.id}>
+              <header>
+                <span className="avatar">{customer.name.slice(0,2).toUpperCase()}</span>
+                <div><b>{customer.name}</b><small>{customer.phone || "Sem telefone"}</small></div>
+              </header>
+              <div className="customer-metrics">
+                <div><small>Total comprado</small><b>{money(customer.totalPurchased)}</b></div>
+                <div><small>A receber</small><b>{money(customer.pendingBalance)}</b></div>
+                <div><small>Em atraso</small><b>{customer.overdueCount}</b></div>
+              </div>
+              <Button variant="outline" onClick={()=>openCustomerHistory(customer)}><ReceiptText /> Histórico financeiro</Button>
+            </article>
+          ))}
+          {!customers.length && <Empty icon={Users} text="Nenhuma cliente cadastrada" />}
         </section>
       )}
-      <section className="panel finance-list">
-        <div className="panel-head">
-          <div>
-            <small>MOVIMENTAÇÃO</small>
-            <h2>Lançamentos recentes</h2>
-          </div>
-          <Button variant="outline" onClick={refresh} disabled={loading}>
-            {loading ? <Loader2 className="spin" /> : "Atualizar"}
-          </Button>
-        </div>
-        {loading && !report ? (
-          <div className="center">
-            <Loader2 className="spin" /> Carregando caixa…
-          </div>
-        ) : (
-          report?.entries.map((entry) => {
-            const pending = entry.kind === "pending";
-            return (
+
+      {tab === "movimentacoes" && (
+        <>
+          {showEntryForm && (
+            <section className="panel finance-form">
+              <div className="panel-head"><div><small>NOVO LANÇAMENTO</small><h2>Registrar no caixa</h2></div></div>
+              <form onSubmit={saveEntry} className="form">
+                <div className="field"><Label>Tipo</Label><Select name="kind" defaultValue="expense"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="income">Entrada</SelectItem><SelectItem value="expense">Despesa</SelectItem></SelectContent></Select></div>
+                <div className="field"><Label>Categoria</Label><Input name="category" placeholder="Ex.: transporte, embalagem" required /></div>
+                <div className="field full"><Label>Descrição</Label><Input name="description" placeholder="O que entrou ou foi pago?" required /></div>
+                <div className="field"><Label>Valor</Label><Input name="amount" type="number" min="0.01" step="0.01" placeholder="0,00" required /></div>
+                <div className="field"><Label>Forma</Label><Select name="paymentMethod" defaultValue="pix"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pix">PIX</SelectItem><SelectItem value="cash">Dinheiro</SelectItem><SelectItem value="card">Cartão</SelectItem><SelectItem value="transfer">Transferência</SelectItem><SelectItem value="other">Outro</SelectItem></SelectContent></Select></div>
+                <div className="field"><Label>Data</Label><Input name="occurredAt" type="date" defaultValue={new Date().toISOString().slice(0,10)} required /></div>
+                <div className="dialog-actions full"><Button type="button" variant="outline" onClick={()=>setShowEntryForm(false)}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? <Loader2 className="spin" /> : <Check />} Salvar no caixa</Button></div>
+              </form>
+            </section>
+          )}
+          <section className="panel finance-list">
+            <div className="panel-head"><div><small>MOVIMENTAÇÃO</small><h2>Lançamentos recentes</h2></div><Button variant="outline" onClick={refresh} disabled={loading}>{loading ? <Loader2 className="spin" /> : "Atualizar"}</Button></div>
+            {loading && !report ? <div className="center"><Loader2 className="spin" /> Carregando financeiro…</div> : report?.entries.map((entry)=>(
               <article className="cash-entry" key={entry.id}>
-                <span
-                  className={
-                    entry.kind === "income"
-                      ? "cash-in"
-                      : pending
-                        ? "cash-pending"
-                        : "cash-out"
-                  }
-                >
-                  {entry.kind === "income" ? "+" : pending ? "…" : "−"}
-                </span>
-                <div>
-                  <b>{entry.description}</b>
-                  <small>
-                    {entry.category} · {pending ? "vence em " : ""}
-                    {new Date(entry.occurredAt).toLocaleDateString("pt-BR")}
-                  </small>
-                </div>
-                <strong
-                  className={
-                    entry.kind === "income"
-                      ? "positive"
-                      : pending
-                        ? "pending-value"
-                        : "negative"
-                  }
-                >
-                  {entry.kind === "income"
-                    ? "+ "
-                    : entry.kind === "expense"
-                      ? "− "
-                      : ""}
-                  {money(entry.amount)}
-                </strong>
+                <span className={entry.kind==="income" ? "cash-in" : entry.kind==="pending" ? "cash-pending" : "cash-out"}>{entry.kind==="income" ? "+" : entry.kind==="pending" ? "…" : "−"}</span>
+                <div><b>{entry.description}</b><small>{entry.category} · {entry.kind==="pending" ? "vence em " : ""}{new Date(entry.occurredAt).toLocaleDateString("pt-BR")}</small></div>
+                <strong className={entry.kind==="income" ? "positive" : entry.kind==="pending" ? "pending-value" : "negative"}>{entry.kind==="income" ? "+ " : entry.kind==="expense" ? "− " : ""}{money(entry.amount)}</strong>
               </article>
-            );
-          })
-        )}
-        {!loading && !report?.entries.length && (
-          <Empty icon={Wallet} text="Nenhuma movimentação neste período" />
-        )}
-      </section>
-      <section className="panel receipt-history">
-        <div className="panel-head">
-          <div>
-            <small>COMPROVANTES</small>
-            <h2>Vendas do período</h2>
-          </div>
-          <span>{report?.receipts?.length || 0} venda(s)</span>
-        </div>
-        <div className="receipt-history-list">
-          {report?.receipts?.map((receipt) => {
-            const phone = receipt.customerPhone.replace(/\D/g, ""),
-              target = phone ? `55${phone.replace(/^55/, "")}` : "";
-            return (
-              <article
-                className="receipt-history-card"
-                key={receipt.receiptCode}
-              >
-                <span className="receipt-history-icon">
-                  <ReceiptText />
-                </span>
+            ))}
+            {!loading && !report?.entries.length && <Empty icon={Wallet} text="Nenhuma movimentação neste período" />}
+          </section>
+        </>
+      )}
+
+      {tab === "comprovantes" && (
+        <section className="panel receipt-history">
+          <div className="panel-head"><div><small>COMPROVANTES</small><h2>Pagamentos recebidos</h2></div><span>{report?.paymentReceipts?.length || 0} recebimento(s)</span></div>
+          <div className="receipt-history-list">
+            {report?.paymentReceipts?.map((payment)=>(
+              <article className="receipt-history-card" key={payment.id}>
+                <span className="receipt-history-icon"><ReceiptText /></span>
                 <div className="receipt-history-info">
-                  <b>{receipt.customerName || "Cliente avulso"}</b>
-                  <small>
-                    {new Date(receipt.soldAt).toLocaleString("pt-BR")} ·{" "}
-                    {receipt.items.length} item(ns)
-                  </small>
-                  <span>
-                    {receipt.items
-                      .map((item) => `${item.quantity}x ${item.name}`)
-                      .join(", ")}
-                  </span>
+                  <b>{payment.customerName}</b>
+                  <small>{payment.label} · {new Date(payment.paidAt).toLocaleString("pt-BR")}</small>
+                  <span>{payment.installmentNumber ? `Parcela ${payment.installmentNumber}` : "Pagamento"} · {methodLabels[payment.paymentMethod] || payment.paymentMethod}</span>
                 </div>
-                <strong>{money(receipt.total)}</strong>
-                <div className="receipt-history-actions">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      if (!openFinanceReceipt(receipt))
-                        notify(
-                          "Permita a abertura de janelas para gerar o PDF.",
-                        );
-                    }}
-                  >
-                    <ReceiptText /> PDF
-                  </Button>
-                  <a
-                    className="receipt-resend"
-                    href={`https://wa.me/${target}?text=${encodeURIComponent(financeReceiptText(receipt))}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
+                <strong>{money(payment.amount)}</strong>
+                {payment.customerPhone && (
+                  <a className="receipt-resend" target="_blank" rel="noreferrer" href={loanOrSaleReceiptWhatsapp(payment)}>
                     <Share /> Reenviar
                   </a>
-                </div>
+                )}
               </article>
-            );
-          })}
+            ))}
+          </div>
+          {!loading && !report?.paymentReceipts?.length && <Empty icon={ReceiptText} text="Nenhum pagamento recebido neste período" />}
+        </section>
+      )}
+
+      {selectedLoanInstallment && (
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-xl border bg-background p-6 shadow-xl">
+            <h2 className="text-lg font-semibold">Registrar pagamento do empréstimo</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Cliente: <strong>{selectedLoanInstallment.loan.customerName}</strong> · parcela <strong>{selectedLoanInstallment.installment.number}</strong> · vencimento <strong>{dateBR(selectedLoanInstallment.installment.dueDate)}</strong></p>
+            <div className="form-grid mt-5">
+              <div className="field"><Label>Valor recebido</Label><Input inputMode="decimal" value={loanPaymentAmount} onChange={(e)=>setLoanPaymentAmount(e.target.value)} /><small>Saldo: {money(selectedLoanInstallment.installment.remainingAmount)}</small></div>
+              <div className="field"><Label>Forma</Label><select value={loanPaymentMethod} onChange={(e)=>setLoanPaymentMethod(e.target.value)} className="flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none"><option value="dinheiro">Dinheiro</option><option value="pix">PIX</option><option value="cartao">Cartão</option><option value="transferencia">Transferência</option><option value="outro">Outro</option></select></div>
+              <div className="field"><Label>Data do recebimento</Label><Input type="date" value={loanPaymentDate} onChange={(e)=>setLoanPaymentDate(e.target.value)} /></div>
+              <div className="field"><Label>Observação</Label><Input value={loanPaymentNotes} onChange={(e)=>setLoanPaymentNotes(e.target.value)} placeholder="Ex.: pagamento antecipado" /></div>
+              <label className="flex items-start gap-3 rounded-lg border bg-muted/40 p-3 text-sm"><input type="checkbox" checked={loanPaymentConfirmed} onChange={(e)=>{setLoanPaymentConfirmed(e.target.checked);if(e.target.checked)setLoanPaymentError("");}} disabled={saving} className="mt-0.5 h-4 w-4 shrink-0" /><span>Confirmo que conferi a cliente, a parcela e o valor antes de registrar o pagamento.</span></label>
+              {loanPaymentError && <div className="payment-error" role="alert"><AlertCircle /> {loanPaymentError}</div>}
+            </div>
+            <div className="dialog-actions mt-5"><Button variant="outline" onClick={()=>setSelectedLoanInstallment(null)} disabled={saving}>Cancelar</Button><Button onClick={confirmLoanPayment} disabled={saving || !loanPaymentConfirmed}>{saving ? <Loader2 className="animate-spin" /> : <Check />} Confirmar pagamento</Button></div>
+          </div>
         </div>
-        {!loading && !report?.receipts?.length && (
-          <Empty icon={ReceiptText} text="Nenhum comprovante neste período" />
-        )}
-      </section>
+      )}
     </>
   );
 }
 
+function loanWhatsappLink(loan: FinanceLoan, installment: FinanceLoanInstallment) {
+  const phone = loan.customerPhone.replace(/\D/g, "");
+  const target = phone ? `55${phone.replace(/^55/, "")}` : "";
+  const msg = `Olá, ${loan.customerName}! Tudo bem? 😊 Passando para lembrar da parcela ${installment.number} do seu empréstimo no valor de ${money(installment.remainingAmount)}, com vencimento em ${new Intl.DateTimeFormat("pt-BR").format(new Date(installment.dueDate + "T12:00:00"))}. Se já realizou o pagamento, pode desconsiderar. WM Vendas`;
+  return `https://wa.me/${target}?text=${encodeURIComponent(msg)}`;
+}
+function loanOrSaleReceiptWhatsapp(payment: FinancePaymentReceipt) {
+  const phone = payment.customerPhone.replace(/\D/g, "");
+  const target = phone ? `55${phone.replace(/^55/, "")}` : "";
+  const msg = [
+    "🧾 COMPROVANTE — WM Vendas",
+    `Cliente: ${payment.customerName}`,
+    `Tipo: ${payment.label}`,
+    payment.installmentNumber ? `Parcela: ${payment.installmentNumber}` : "",
+    `Valor recebido: ${money(payment.amount)}`,
+    `Forma: ${payment.paymentMethod}`,
+    `Data: ${new Date(payment.paidAt).toLocaleString("pt-BR")}`,
+    payment.remainingAmount > 0 ? `Saldo restante: ${money(payment.remainingAmount)}` : "Parcela quitada.",
+    "Obrigada pela preferência! — WM Vendas",
+  ].filter(Boolean).join("\n");
+  return `https://wa.me/${target}?text=${encodeURIComponent(msg)}`;
+}
 function Empty({ icon: Icon, text }: { icon: any; text: string }) {
   return (
     <div className="empty">
