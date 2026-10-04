@@ -446,7 +446,7 @@ Deno.serve(async (req) => {
       return reply({
         startDate,
         summary:{
-          income,expenses,balance:income + loanReceipts - expenses - loanOutflow,
+          income,expenses,balance:income - expenses - loanOutflow,
           sales:totalSales,outstanding,costOfGoods,
           estimatedProfit:totalSales-costOfGoods-manualExpense,
           loanOutstanding,loanPrincipalActive,loanPaymentsReceived:loanReceipts,loanOutflow
