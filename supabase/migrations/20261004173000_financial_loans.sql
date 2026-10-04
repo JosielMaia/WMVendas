@@ -56,6 +56,10 @@ create index if not exists wm_loan_installments_tenant_due_idx on public.wm_loan
 create index if not exists wm_loan_installments_loan_idx on public.wm_loan_installments(loan_id,installment_number);
 create index if not exists wm_loan_payments_tenant_paid_idx on public.wm_loan_payments(tenant_id,paid_at desc);
 create index if not exists wm_loan_payments_loan_idx on public.wm_loan_payments(loan_id,installment_id,paid_at desc);
+create index if not exists wm_loans_customer_fk_idx on public.wm_loans(customer_id);
+create index if not exists wm_loan_payments_installment_fk_idx on public.wm_loan_payments(installment_id);
+create index if not exists wm_loan_payments_customer_fk_idx on public.wm_loan_payments(customer_id);
+create index if not exists wm_receivable_payments_customer_fk_idx on public.wm_receivable_payments(customer_id);
 
 create or replace function public.wm_create_loan(
   p_tenant_id uuid,p_customer_id bigint,p_principal numeric,p_interest_rate numeric default 0,
