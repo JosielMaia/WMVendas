@@ -414,6 +414,24 @@ Deno.serve(async (req) => {
       const receivableRows=[...paidRows,...pendingRows];
       for (const receipt of receiptMap.values()) receipt.installmentDates=receivableRows.filter((item:any)=>Number(item.sale_id)===receipt.firstSaleId).map((item:any)=>({number:Number(item.installment_number),dueDate:item.due_date,amount:Number(item.amount),status:item.status})).sort((a:any,b:any)=>a.number-b.number);
       const receipts=Array.from(receiptMap.values()).map(({firstSaleId,...receipt})=>receipt).sort((a:any,b:any)=>new Date(b.soldAt).getTime()-new Date(a.soldAt).getTime());
+      const paymentReceipts=[
+        ...paidRows.map((item:any)=>({
+          id:`sale-payment-${item.id}`,kind:"sale",paymentId:Number(item.id),customerName:item.wm_customers?.name||"Cliente",
+          customerPhone:item.wm_customers?.phone||"",amount:Number(item.amount),paidAt:item.paid_at,
+          installmentNumber:item.wm_receivables?.installment_number||null,dueDate:item.wm_receivables?.due_date||null,
+          paymentMethod:item.payment_method||"outro",remainingAmount:Math.max(0,Number(item.wm_receivables?.amount||0)-Number(item.amount)),label:"Pagamento de venda"
+        })),
+        ...loanPaymentRows.filter((item:any)=>String(item.paid_at||"")>=startDate).map((item:any)=>{
+          const inst=loanInstallmentRows.find((x:any)=>Number(x.id)===Number(item.installment_id));
+          const loan=loanRows.find((x:any)=>Number(x.id)===Number(item.loan_id));
+          return {
+            id:`loan-payment-${item.id}`,kind:"loan",paymentId:Number(item.id),customerName:item.wm_customers?.name||"Cliente",
+            customerPhone:item.wm_customers?.phone||"",amount:Number(item.amount),paidAt:item.paid_at,
+            installmentNumber:inst?.installment_number||null,dueDate:inst?.due_date||loan?.due_date||null,
+            paymentMethod:item.payment_method||"outro",remainingAmount:Math.max(0,Number(inst?.amount||0)-Number(item.amount)),label:"Pagamento de empréstimo"
+          };
+        })
+      ].sort((a:any,b:any)=>new Date(b.paidAt).getTime()-new Date(a.paidAt).getTime());
 
       const loansPayload = loanRows.map((loan:any)=>{
         const installments = loanInstallmentRows.filter((item:any)=>Number(item.loan_id)===Number(loan.id)).map((item:any)=>{
@@ -433,7 +451,7 @@ Deno.serve(async (req) => {
           estimatedProfit:totalSales-costOfGoods-manualExpense,
           loanOutstanding,loanPrincipalActive,loanPaymentsReceived:loanReceipts,loanOutflow
         },
-        entries:movements,receipts,loans:loansPayload
+        entries:movements,receipts,paymentReceipts,loans:loansPayload
       });
     }
     if (action === "create_loan") {
