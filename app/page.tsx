@@ -2479,6 +2479,11 @@ function FinanceView({
       const days = Math.ceil((new Date(i.dueDate + "T12:00:00").getTime() - Date.now()) / 86400000);
       return days >= 0 && days <= 3;
     }).length, 0);
+  const receivableDueSoon = (report?.entries || []).filter((e) => {
+    if (e.kind !== "pending") return false;
+    const days = Math.ceil((new Date(e.occurredAt).getTime() - Date.now()) / 86400000);
+    return days >= 0 && days <= 3;
+  }).length;
 
   const methodLabels: Record<string, string> = {
     dinheiro: "Dinheiro", pix: "PIX", cartao: "Cartão",
@@ -2532,7 +2537,7 @@ function FinanceView({
           <div className="stats mini">
             <article className="stat"><small>Juros contratados</small><strong>{money(loans.reduce((s,l)=>s+l.interestAmount,0))}</strong></article>
             <article className="stat"><small>Recebido de empréstimos</small><strong>{money(summary.loanPaymentsReceived)}</strong></article>
-            <article className="stat"><small>A vencer em 3 dias</small><strong>{loanDueSoon + (report?.entries.filter((e)=>e.kind==="pending").length || 0)}</strong></article>
+            <article className="stat"><small>A vencer em 3 dias</small><strong>{loanDueSoon + receivableDueSoon}</strong></article>
             <article className="stat"><small>Em atraso</small><strong>{loanOverdue}</strong></article>
           </div>
           {(loanOverdue > 0 || loanDueSoon > 0) && (
