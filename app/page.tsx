@@ -2405,7 +2405,30 @@ function FinanceView({
     e.preventDefault();
     setSaving(true);
     try {
-      const values = Object.fromEntries(new FormData(e.currentTarget));
+      const form = new FormData(e.currentTarget);
+      const rawPrincipal = String(form.get("principal") || "").trim();
+      const principal = Number(
+        rawPrincipal.includes(",")
+          ? rawPrincipal.replace(/\\./g, "").replace(",", ".")
+          : rawPrincipal,
+      );
+      const interestRate = Number(String(form.get("interestRate") || "0").replace(",", "."));
+      const installments = Number(form.get("installments") || "1");
+      const customerId = Number(form.get("customerId") || "0");
+      const values = {
+        customerId,
+        principal,
+        interestRate,
+        startDate: String(form.get("startDate") || ""),
+        firstDueDate: String(form.get("firstDueDate") || ""),
+        installments,
+        frequency: String(form.get("frequency") || "unico"),
+        notes: String(form.get("notes") || ""),
+      };
+      if (!Number.isInteger(customerId) || customerId < 1) throw new Error("Selecione a cliente.");
+      if (!Number.isFinite(principal) || principal <= 0) throw new Error("Informe um valor de empréstimo válido.");
+      if (!Number.isFinite(interestRate) || interestRate < 0) throw new Error("Informe uma taxa de juros válida.");
+      if (!Number.isInteger(installments) || installments < 1 || installments > 120) throw new Error("Informe uma quantidade de parcelas válida.");
       await api("create_loan", values);
       notify("Empréstimo cadastrado e lançado no Caixa.");
       setShowLoanForm(false);
