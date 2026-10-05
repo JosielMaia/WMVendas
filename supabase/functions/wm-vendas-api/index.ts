@@ -59,7 +59,7 @@ function businessProfile(activityValue:unknown,segmentValue:unknown){
   return {activity,segment};
 }
 
-const sellerActions=new Set(["session_check","list","barcode_lookup","logout","create_customer","create_sale","create_express_sale","create_product","update_product","mark_paid","customer_history","update_store_order_status"]);
+const sellerActions=new Set(["session_check","list","barcode_lookup","logout","create_customer","create_sale","create_express_sale","create_product","update_product","mark_paid","customer_history","update_store_order_status","create_loan","record_loan_payment"]);
 const viewerActions=new Set(["session_check","list","barcode_lookup","logout"]);
 function canRun(role:string,action:string){return role==="owner"||role==="admin"||(role==="seller"&&sellerActions.has(action))||(role==="viewer"&&viewerActions.has(action))}
 async function audit(session:{tenantId:string;userId:string|null;memberId:string|null;role:string|null},eventType:string,entityType:string,entityId:string|null,metadata:Record<string,unknown>={}){
