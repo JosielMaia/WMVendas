@@ -409,7 +409,7 @@ Deno.serve(async (req) => {
       const installmentReceipts = paidRows.reduce((sum:number,item:any)=>sum+Number(item.amount),0);
       const loanReceipts = loanPaymentRows.filter((item:any)=>String(item.paid_at||"")>=startDate).reduce((sum:number,item:any)=>sum+Number(item.amount),0);
       const outstanding = pendingRows.reduce((sum:number,item:any)=>sum+Number(item.amount),0);
-      const loanOutstanding = loanInstallmentRows.reduce((sum:number,item:any)=>sum + (item.status==="pending" ? Number(item.amount) : 0),0);
+      const loanOutstanding = loanInstallmentRows.reduce((sum:number,item:any)=>{ const loan=loanRows.find((l:any)=>Number(l.id)===Number(item.loan_id)); if(!loan || item.status!=="pending") return sum; const paid=loanPaymentRows.filter((p:any)=>Number(p.installment_id)===Number(item.id)).reduce((s:number,p:any)=>s+Number(p.amount),0); return sum+loanLateCharges(loan,item,paid).totalDue; },0);
       const loanPrincipalActive = loanRows.filter((l:any)=>l.status==="active").reduce((sum:number,l:any)=>sum+Number(l.principal),0);
       const loanOutflow = cashRows.filter((item:any)=>item.source_type==="loan" && item.kind==="expense").reduce((sum:number,item:any)=>sum+Number(item.amount),0);
       const manualIncome = manual.filter((item:any)=>item.kind==="income").reduce((sum:number,item:any)=>sum+Number(item.amount),0);
