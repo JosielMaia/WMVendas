@@ -216,6 +216,12 @@ type FinanceLoanInstallment = {
   amount: number;
   paidAmount: number;
   remainingAmount: number;
+  principalRemaining?: number;
+  daysLate?: number;
+  latePenalty?: number;
+  lateInterest?: number;
+  lateCharges?: number;
+  totalDue?: number;
   status: string;
   paidAt?: string | null;
 };
@@ -234,6 +240,11 @@ type FinanceLoan = {
   frequency: string;
   status: string;
   notes: string;
+  graceDays?: number;
+  latePenaltyRate?: number;
+  lateInterestDailyRate?: number;
+  lateInterestCompound?: boolean;
+  lateChargeCapRate?: number;
   paidAmount: number;
   remainingAmount: number;
   installmentsDetail: FinanceLoanInstallment[];
@@ -271,6 +282,14 @@ type FinanceReport = {
   receipts: SaleReceipt[];
   paymentReceipts: FinancePaymentReceipt[];
   loans: FinanceLoan[];
+  loanPolicy?: {
+    graceDays: number;
+    latePenaltyRate: number;
+    lateInterestDailyRate: number;
+    lateInterestCompound: boolean;
+    lateChargeCapRate: number;
+    reminderDays: number[];
+  };
 };
 type Dashboard = {
   investment: number;
@@ -1754,6 +1773,52 @@ function CustomerHistoryDialog({
     transferencia: "Transferência",
     outro: "Outro",
   };
+  function debtorReportText() {
+    if (!history) return "";
+    const loanLines = history.loans.flatMap((loan) => [
+      `Empréstimo #${loan.id}: ${money(loan.principal)} + ${money(loan.interestAmount)} de juros = ${money(loan.totalAmount)}`,
+      ...loan.installmentsDetail.map((item) => {
+        const late = Number(item.daysLate || 0);
+        const charges = Number(item.lateCharges || 0);
+        return `  Parcela ${item.number}: venc. ${new Date(item.dueDate+"T12:00:00").toLocaleDateString("pt-BR")} • devido ${money(item.totalDue ?? item.amount)} • pago ${money(item.paidAmount)} • saldo ${money(item.remainingAmount)}${late ? ` • ${late} dia(s) de atraso • encargos ${money(charges)}` : ""}`;
+      }),
+    ]);
+    return [
+      "RELATÓRIO FINANCEIRO — WM VENDAS",
+      `Data: ${new Date().toLocaleString("pt-BR")}`,
+      `Cliente: ${history.customer.name}`,
+      `WhatsApp: ${history.customer.phone || "Não informado"}`,
+      "",
+      `Total comprado: ${money(history.summary.totalPurchased)}`,
+      `Total pago em compras: ${money(history.summary.totalPaid)}`,
+      `Saldo de compras: ${money(history.summary.openBalance)}`,
+      `Total emprestado: ${money(history.summary.loanTotalBorrowed)}`,
+      `Pago de empréstimos: ${money(history.summary.loanPaidTotal)}`,
+      `Saldo de empréstimos: ${money(history.summary.loanOpenTotal)}`,
+      "",
+      "EMPRÉSTIMOS E PARCELAS",
+      ...(loanLines.length ? loanLines : ["Nenhum empréstimo registrado."]),
+      "",
+      "Este relatório é um demonstrativo do cadastro financeiro do WM Vendas."
+    ].join("\\n");
+  }
+  function sendDebtorReport() {
+    if (!history) return;
+    const phone = history.customer.phone.replace(/\\D/g, "");
+    const target = phone ? `55${phone.replace(/^55/, "")}` : "";
+    const url = target
+      ? `https://wa.me/${target}?text=${encodeURIComponent(debtorReportText())}`
+      : `https://wa.me/?text=${encodeURIComponent(debtorReportText())}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+  function printDebtorReport() {
+    if (!history) return;
+    const win = window.open("", "_blank", "width=760,height=900");
+    if (!win) return;
+    const text = debtorReportText().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    win.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório financeiro</title><style>body{font-family:Arial,sans-serif;padding:28px;max-width:780px;margin:auto;color:#2d2025}h1{color:#7b2448}pre{white-space:pre-wrap;line-height:1.55;font:14px Arial,sans-serif}.box{border:1px solid #eadbe1;border-radius:14px;padding:22px}</style></head><body><h1>WM Vendas</h1><div class="box"><pre>${text}</pre></div><script>window.onload=()=>setTimeout(()=>window.print(),250)</script></body></html>`);
+    win.document.close();
+  }
   return (
     <Dialog open={!!history} onOpenChange={(open) => !open && close()}>
       <DialogContent className="customer-history-dialog">
@@ -1763,6 +1828,12 @@ function CustomerHistoryDialog({
             {history ? history.customer.name + (history.customer.phone ? " • " + history.customer.phone : "") : ""}
           </DialogDescription>
         </DialogHeader>
+        {history && (
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button type="button" variant="outline" onClick={printDebtorReport}><Download /> Relatório / PDF</Button>
+            <Button type="button" onClick={sendDebtorReport}><Send /> Enviar ao devedor</Button>
+          </div>
+        )}
         {history && (
           <>
             <div className="stats mini">
@@ -1841,7 +1912,7 @@ function CustomerHistoryDialog({
                     <div className="history-row" key={loan.id}>
                       <div>
                         <b>Empréstimo #{loan.id} · {money(loan.totalAmount)}</b>
-                        <small>{loan.interestRate}% de juros · {loan.installments} parcela(s) · {loan.status === "paid" ? "Quitado" : "Ativo"}</small>
+                        <small>{loan.interestRate}% de juros · {loan.installments} parcela(s) · {loan.status === "paid" ? "Quitado" : "Ativo"}</small><small>{loan.installmentsDetail.filter((i)=>Number(i.daysLate||0)>0).length} parcela(s) com atraso</small>
                       </div>
                       <strong>{money(loan.remainingAmount)}</strong>
                     </div>
@@ -2372,11 +2443,23 @@ function FinanceView({
   const [loanPaymentNotes, setLoanPaymentNotes] = useState("");
   const [loanPaymentConfirmed, setLoanPaymentConfirmed] = useState(false);
   const [loanPaymentError, setLoanPaymentError] = useState("");
+  const [loanPolicy, setLoanPolicy] = useState<NonNullable<FinanceReport["loanPolicy"]> | null>(null);
+  const [showLoanPolicy, setShowLoanPolicy] = useState(false);
+  const [savingPolicy, setSavingPolicy] = useState(false);
 
   async function refresh() {
     setLoading(true);
     try {
-      setReport(await api("finance_report"));
+      const finance = await api("finance_report");
+      setReport(finance);
+      setLoanPolicy(finance.loanPolicy || {
+        graceDays: 0,
+        latePenaltyRate: 0,
+        lateInterestDailyRate: 0,
+        lateInterestCompound: false,
+        lateChargeCapRate: 100,
+        reminderDays: [7,3,1,0],
+      });
     } catch (e) {
       notify(e instanceof Error ? e.message : "Não foi possível carregar o financeiro.");
     } finally {
@@ -2440,9 +2523,34 @@ function FinanceView({
     }
   }
 
+  async function saveLoanPolicy(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSavingPolicy(true);
+    try {
+      const form = new FormData(e.currentTarget);
+      const values = {
+        graceDays: Number(form.get("graceDays") || 0),
+        latePenaltyRate: Number(String(form.get("latePenaltyRate") || "0").replace(",", ".")),
+        lateInterestDailyRate: Number(String(form.get("lateInterestDailyRate") || "0").replace(",", ".")),
+        lateInterestCompound: form.get("lateInterestCompound") === "on",
+        lateChargeCapRate: Number(String(form.get("lateChargeCapRate") || "100").replace(",", ".")),
+        reminderDays: [7,3,1,0],
+      };
+      await api("update_loan_policy", values);
+      setLoanPolicy({ ...values, reminderDays: [7,3,1,0] });
+      setShowLoanPolicy(false);
+      notify("Política de juros e atraso salva.");
+      await refresh();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Não foi possível salvar a política.");
+    } finally {
+      setSavingPolicy(false);
+    }
+  }
+
   function openLoanPayment(loan: FinanceLoan, installment: FinanceLoanInstallment) {
     setSelectedLoanInstallment({ loan, installment });
-    setLoanPaymentAmount(installment.remainingAmount.toFixed(2).replace(".", ","));
+    setLoanPaymentAmount((installment.totalDue ?? installment.remainingAmount).toFixed(2).replace(".", ","));
     setLoanPaymentMethod("dinheiro");
     setLoanPaymentDate(new Date().toISOString().slice(0, 10));
     setLoanPaymentNotes("");
@@ -2464,8 +2572,9 @@ function FinanceView({
       setLoanPaymentError("Informe um valor recebido válido.");
       return;
     }
-    if (amount > selectedLoanInstallment.installment.remainingAmount + 0.005) {
-      setLoanPaymentError("O pagamento não pode ser maior que o saldo da parcela.");
+    const totalDue = selectedLoanInstallment.installment.totalDue ?? selectedLoanInstallment.installment.remainingAmount;
+    if (amount > totalDue + 0.005) {
+      setLoanPaymentError("O pagamento não pode ser maior que o total devido da parcela.");
       return;
     }
     setSaving(true);
@@ -2575,6 +2684,32 @@ function FinanceView({
 
       {tab === "emprestimos" && (
         <>
+          <section className="panel">
+            <div className="panel-head">
+              <div><small>POLÍTICA DE COBRANÇA</small><h2>Juros e regras de atraso</h2></div>
+              <Button variant="outline" onClick={()=>setShowLoanPolicy((v)=>!v)}>{showLoanPolicy ? "Fechar" : "Configurar"}</Button>
+            </div>
+            <p className="text-sm text-muted-foreground">Defina carência, multa, juros por dia, limite dos encargos e se haverá capitalização. A política fica gravada no contrato de novos empréstimos.</p>
+            {loanPolicy && (
+              <div className="stats mini">
+                <article className="stat"><small>Carência</small><strong>{loanPolicy.graceDays} dia(s)</strong></article>
+                <article className="stat"><small>Multa</small><strong>{loanPolicy.latePenaltyRate}%</strong></article>
+                <article className="stat"><small>Juros/dia</small><strong>{loanPolicy.lateInterestDailyRate}%</strong></article>
+                <article className="stat"><small>Capitalização</small><strong>{loanPolicy.lateInterestCompound ? "Ativa" : "Simples"}</strong></article>
+              </div>
+            )}
+            {showLoanPolicy && loanPolicy && (
+              <form onSubmit={saveLoanPolicy} className="form finance-form mt-4">
+                <div className="field"><Label>Carência após vencimento (dias)</Label><Input name="graceDays" type="number" min="0" max="365" defaultValue={loanPolicy.graceDays}/></div>
+                <div className="field"><Label>Multa por atraso (%)</Label><Input name="latePenaltyRate" type="number" min="0" max="100" step="0.01" defaultValue={loanPolicy.latePenaltyRate}/></div>
+                <div className="field"><Label>Juros por atraso (% ao dia)</Label><Input name="lateInterestDailyRate" type="number" min="0" max="10" step="0.001" defaultValue={loanPolicy.lateInterestDailyRate}/></div>
+                <div className="field"><Label>Limite dos encargos (% da parcela)</Label><Input name="lateChargeCapRate" type="number" min="0" max="1000" step="0.01" defaultValue={loanPolicy.lateChargeCapRate}/></div>
+                <label className="flex items-start gap-3 rounded-lg border bg-muted/40 p-3 text-sm full"><input type="checkbox" name="lateInterestCompound" defaultChecked={loanPolicy.lateInterestCompound} className="mt-0.5 h-4 w-4"/><span><b>Capitalizar juros (juro sobre juro)</b><small className="block text-muted-foreground mt-1">Ative somente quando essa forma de cobrança for juridicamente aplicável ao contrato. O padrão é juros simples.</small></span></label>
+                <div className="dialog-actions full"><Button type="button" variant="outline" onClick={()=>setShowLoanPolicy(false)}>Cancelar</Button><Button type="submit" disabled={savingPolicy}>{savingPolicy ? <Loader2 className="spin"/> : <Check/>} Salvar política</Button></div>
+              </form>
+            )}
+          </section>
+      {showLoanForm && (
           {showLoanForm && (
             <section className="panel finance-form">
               <div className="panel-head"><div><small>NOVO EMPRÉSTIMO</small><h2>Registrar empréstimo</h2></div></div>
@@ -2655,7 +2790,7 @@ function FinanceView({
                     <div className="history-row" key={item.id}>
                       <div>
                         <b>Parcela {item.number} · {money(item.amount)}</b>
-                        <small>Vencimento {dateBR(item.dueDate)} · {item.status==="paid" ? "Quitada" : "Saldo "+money(item.remainingAmount)}</small>
+                        <small>Vencimento {dateBR(item.dueDate)} · {item.status==="paid" ? "Quitada" : "Saldo "+money(item.remainingAmount)}{(item.daysLate||0)>0 ? ` · ${item.daysLate} dia(s) de atraso` : ""}</small>{(item.lateCharges||0)>0 && <small className="text-amber-700">Encargos por atraso: {money(item.lateCharges||0)}</small>}
                       </div>
                       {item.remainingAmount > 0 ? (
                         <div className="page-actions">
@@ -2755,6 +2890,11 @@ function FinanceView({
           <div className="w-full max-w-lg rounded-xl border bg-background p-6 shadow-xl">
             <h2 className="text-lg font-semibold">Registrar pagamento do empréstimo</h2>
             <p className="mt-1 text-sm text-muted-foreground">Cliente: <strong>{selectedLoanInstallment.loan.customerName}</strong> · parcela <strong>{selectedLoanInstallment.installment.number}</strong> · vencimento <strong>{dateBR(selectedLoanInstallment.installment.dueDate)}</strong></p>
+            {(selectedLoanInstallment.installment.daysLate||0)>0 && (
+              <div className="mt-3 rounded-lg border bg-muted/40 p-3 text-sm">
+                <b>{selectedLoanInstallment.installment.daysLate} dia(s) de atraso</b> · Encargos {money(selectedLoanInstallment.installment.lateCharges||0)} · Total devido {money(selectedLoanInstallment.installment.totalDue||selectedLoanInstallment.installment.remainingAmount)}
+              </div>
+            )}
             <div className="form-grid mt-5">
               <div className="field"><Label>Valor recebido</Label><Input inputMode="decimal" value={loanPaymentAmount} onChange={(e)=>setLoanPaymentAmount(e.target.value)} /><small>Saldo: {money(selectedLoanInstallment.installment.remainingAmount)}</small></div>
               <div className="field"><Label>Forma</Label><select value={loanPaymentMethod} onChange={(e)=>setLoanPaymentMethod(e.target.value)} className="flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none"><option value="dinheiro">Dinheiro</option><option value="pix">PIX</option><option value="cartao">Cartão</option><option value="transferencia">Transferência</option><option value="outro">Outro</option></select></div>
