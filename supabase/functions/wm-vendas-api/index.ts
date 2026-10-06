@@ -59,29 +59,33 @@ function businessProfile(activityValue:unknown,segmentValue:unknown){
   return {activity,segment};
 }
 
-function loanLateCharges(loan:any, installment:any, paidTotal:number, asOfDate=new Date().toISOString().slice(0,10)) {
-  const remaining=Math.max(0,Number(installment.amount||0)-paidTotal);
+function loanLateCharges(loan:any, installment:any, normalPaidTotal:number, interestOnlyPaidTotal=0, asOfDate=new Date().toISOString().slice(0,10)) {
+  const totalInterest=Number(loan.interest_amount||0);
+  const count=Math.max(1,Number(loan.installments||1));
+  const baseInterest=Number((totalInterest/count).toFixed(2));
+  const n=Number(installment.installment_number||1);
+  const contractualInterest=n<count ? baseInterest : Number((totalInterest-baseInterest*(count-1)).toFixed(2));
+  const principalAmount=Math.max(0,Number((Number(installment.amount||0)-contractualInterest).toFixed(2)));
+  const principalRemaining=Math.max(0,Number((principalAmount-normalPaidTotal).toFixed(2)));
+  const interestRemaining=Math.max(0,Number((contractualInterest-interestOnlyPaidTotal).toFixed(2)));
+  const baseRemaining=Number((principalRemaining+interestRemaining).toFixed(2));
   const due=new Date(String(installment.due_date||"")+"T00:00:00Z");
   const asOf=new Date(String(asOfDate)+"T00:00:00Z");
   const rawDays=Math.floor((asOf.getTime()-due.getTime())/86400000);
   const grace=Math.max(0,Number(loan.grace_days||0));
   const daysLate=Math.max(0,rawDays-grace);
   let penalty=0, interest=0;
-  if(daysLate>0 && remaining>0){
-    penalty=Number((remaining*Number(loan.late_penalty_rate||0)/100).toFixed(2));
+  if(daysLate>0 && baseRemaining>0){
+    penalty=Number((baseRemaining*Number(loan.late_penalty_rate||0)/100).toFixed(2));
     const daily=Number(loan.late_interest_daily_rate||0)/100;
-    if(daily>0){
-      interest=loan.late_interest_compound
-        ? Number((remaining*(Math.pow(1+daily,daysLate)-1)).toFixed(2))
-        : Number((remaining*daily*daysLate).toFixed(2));
-    }
+    if(daily>0) interest=loan.late_interest_compound ? Number((baseRemaining*(Math.pow(1+daily,daysLate)-1)).toFixed(2)) : Number((baseRemaining*daily*daysLate).toFixed(2));
     const cap=Number(installment.amount||0)*Number(loan.late_charge_cap_rate||0)/100;
     if(Number.isFinite(cap) && penalty+interest>cap){
       if(penalty>=cap){ penalty=Math.max(0,Number(cap.toFixed(2))); interest=0; }
-      else { interest=Math.max(0,Number((cap-penalty).toFixed(2))); }
+      else interest=Math.max(0,Number((cap-penalty).toFixed(2)));
     }
   }
-  return {daysLate,latePenalty:penalty,lateInterest:interest,lateCharges:Number((penalty+interest).toFixed(2)),totalDue:Number((remaining+penalty+interest).toFixed(2))};
+  return {daysLate,latePenalty:penalty,lateInterest:interest,lateCharges:Number((penalty+interest).toFixed(2)),contractualInterest,interestPaid:interestOnlyPaidTotal,remainingInterest:interestRemaining,principalRemaining,principalPaid:Math.min(normalPaidTotal,principalAmount),totalDue:Number((baseRemaining+penalty+interest).toFixed(2))};
 }
 
 const sellerActions=new Set(["session_check","list","barcode_lookup","logout","create_customer","create_sale","create_express_sale","create_product","update_product","mark_paid","customer_history","update_store_order_status","create_loan","record_loan_payment"]);
@@ -389,7 +393,7 @@ Deno.serve(async (req) => {
         db.from("wm_supplier_bills").select("id,amount,paid_at,supplier_name").eq("tenant_id",tenantId).eq("status","paid").gte("paid_at",startDate),
         db.from("wm_loans").select("id,customer_id,principal,interest_rate,interest_amount,total_amount,start_date,due_date,installments,frequency,status,notes,grace_days,late_penalty_rate,late_interest_daily_rate,late_interest_compound,late_charge_cap_rate,wm_customers(name,phone)").eq("tenant_id",tenantId).order("created_at",{ascending:false}).limit(200),
         db.from("wm_loan_installments").select("id,loan_id,installment_number,due_date,amount,status,paid_at").eq("tenant_id",tenantId).order("due_date"),
-        db.from("wm_loan_payments").select("id,loan_id,installment_id,customer_id,amount,paid_at,payment_method,notes,wm_customers(name,phone)").eq("tenant_id",tenantId).order("paid_at",{ascending:false}),
+        db.from("wm_loan_payments").select("id,loan_id,installment_id,customer_id,amount,paid_at,payment_method,notes,payment_type,wm_customers(name,phone)").eq("tenant_id",tenantId).order("paid_at",{ascending:false}),
         db.rpc("wm_get_loan_policy",{p_tenant_id:tenantId})
       ]);
       for (const result of [cash,sales,paymentRows,pendingReceivables,paidBills,loans,loanInstallments,loanPayments]) if (result.error) throw result.error;
@@ -409,7 +413,7 @@ Deno.serve(async (req) => {
       const installmentReceipts = paidRows.reduce((sum:number,item:any)=>sum+Number(item.amount),0);
       const loanReceipts = loanPaymentRows.filter((item:any)=>String(item.paid_at||"")>=startDate).reduce((sum:number,item:any)=>sum+Number(item.amount),0);
       const outstanding = pendingRows.reduce((sum:number,item:any)=>sum+Number(item.amount),0);
-      const loanOutstanding = loanInstallmentRows.reduce((sum:number,item:any)=>{ const loan=loanRows.find((l:any)=>Number(l.id)===Number(item.loan_id)); if(!loan || item.status!=="pending") return sum; const paid=loanPaymentRows.filter((p:any)=>Number(p.installment_id)===Number(item.id)).reduce((s:number,p:any)=>s+Number(p.amount),0); return sum+loanLateCharges(loan,item,paid).totalDue; },0);
+      const loanOutstanding = loanInstallmentRows.reduce((sum:number,item:any)=>{ const loan=loanRows.find((l:any)=>Number(l.id)===Number(item.loan_id)); if(!loan || item.status!=="pending") return sum; const rows=loanPaymentRows.filter((p:any)=>Number(p.installment_id)===Number(item.id)); const paid=rows.filter((p:any)=>String(p.payment_type||"normal")!=="interest_only").reduce((s:number,p:any)=>s+Number(p.amount),0); const interestPaid=rows.filter((p:any)=>String(p.payment_type||"normal")==="interest_only").reduce((s:number,p:any)=>s+Number(p.amount),0); return sum+loanLateCharges(loan,item,paid,interestPaid).totalDue; },0);
       const loanPrincipalActive = loanRows.filter((l:any)=>l.status==="active").reduce((sum:number,l:any)=>sum+Number(l.principal),0);
       const loanOutflow = cashRows.filter((item:any)=>item.source_type==="loan" && item.kind==="expense").reduce((sum:number,item:any)=>sum+Number(item.amount),0);
       const manualIncome = manual.filter((item:any)=>item.kind==="income").reduce((sum:number,item:any)=>sum+Number(item.amount),0);
@@ -462,9 +466,11 @@ Deno.serve(async (req) => {
 
       const loansPayload = loanRows.map((loan:any)=>{
         const installments = loanInstallmentRows.filter((item:any)=>Number(item.loan_id)===Number(loan.id)).map((item:any)=>{
-          const paid = loanPaymentRows.filter((p:any)=>Number(p.installment_id)===Number(item.id)).reduce((sum:number,p:any)=>sum+Number(p.amount),0);
-          const late=loanLateCharges(loan,item,paid);
-          return {id:item.id,number:Number(item.installment_number),dueDate:item.due_date,amount:Number(item.amount),paidAmount:paid,remainingAmount:late.totalDue,principalRemaining:Math.max(0,Number(item.amount)-paid),daysLate:late.daysLate,latePenalty:late.latePenalty,lateInterest:late.lateInterest,lateCharges:late.lateCharges,totalDue:late.totalDue,status:paid>=Number(item.amount)-0.005 && late.lateCharges===0?"paid":"pending",paidAt:item.paid_at||null};
+          const rows=loanPaymentRows.filter((p:any)=>Number(p.installment_id)===Number(item.id));
+          const paid=rows.filter((p:any)=>String(p.payment_type||"normal")!=="interest_only").reduce((sum:number,p:any)=>sum+Number(p.amount),0);
+          const interestPaid=rows.filter((p:any)=>String(p.payment_type||"normal")==="interest_only").reduce((sum:number,p:any)=>sum+Number(p.amount),0);
+          const late=loanLateCharges(loan,item,paid,interestPaid);
+          return {id:item.id,number:Number(item.installment_number),dueDate:item.due_date,amount:Number(item.amount),paidAmount:paid,interestPaid,remainingAmount:late.totalDue,principalRemaining:late.principalRemaining,daysLate:late.daysLate,latePenalty:late.latePenalty,lateInterest:late.lateInterest,lateCharges:late.lateCharges,totalDue:late.totalDue,status:late.totalDue<=0?"paid":"pending",paidAt:item.paid_at||null};
         });
         const paidAmount = installments.reduce((sum:number,i:any)=>sum+i.paidAmount,0);
         const remainingAmount = installments.reduce((sum:number,i:any)=>sum+i.remainingAmount,0);
@@ -873,13 +879,15 @@ Deno.serve(async (req) => {
       const openBalance=installments.reduce((sum:number,item:any)=>sum+Number(item.remainingAmount||0),0);
       const loanPaymentRows=(loanPayments||[]).map((p:any)=>({
         paymentId:Number(p.id),loanId:Number(p.loan_id),installmentId:Number(p.installment_id),
-        paidAmount:Number(p.amount),paidAt:p.paid_at,paymentMethod:p.payment_method||"dinheiro",notes:p.notes||""
+        paidAmount:Number(p.amount),paidAt:p.paid_at,paymentMethod:p.payment_method||"dinheiro",paymentType:p.payment_type||"normal",notes:p.notes||""
       }));
       const loanHistory=(loans||[]).map((loan:any)=>{
         const details=(loanInstallments||[]).filter((i:any)=>Number(i.loan_id)===Number(loan.id)).map((i:any)=>{
-          const paid=loanPaymentRows.filter((p:any)=>p.installmentId===Number(i.id)).reduce((sum:number,p:any)=>sum+p.paidAmount,0);
-          const late=loanLateCharges(loan,i,paid);
-          return {id:Number(i.id),number:Number(i.installment_number),dueDate:i.due_date,amount:Number(i.amount),paidAmount:paid,remainingAmount:late.totalDue,principalRemaining:Math.max(0,Number(i.amount)-paid),daysLate:late.daysLate,latePenalty:late.latePenalty,lateInterest:late.lateInterest,lateCharges:late.lateCharges,totalDue:late.totalDue,status:paid>=Number(i.amount)-0.005 && late.lateCharges===0?"paid":"pending",paidAt:i.paid_at||null};
+          const rows=loanPaymentRows.filter((p:any)=>p.installmentId===Number(i.id));
+          const paid=rows.filter((p:any)=>p.paymentType!=="interest_only").reduce((sum:number,p:any)=>sum+p.paidAmount,0);
+          const interestPaid=rows.filter((p:any)=>p.paymentType==="interest_only").reduce((sum:number,p:any)=>sum+p.paidAmount,0);
+          const late=loanLateCharges(loan,i,paid,interestPaid);
+          return {id:Number(i.id),number:Number(i.installment_number),dueDate:i.due_date,amount:Number(i.amount),paidAmount:paid,interestPaid,remainingAmount:late.totalDue,principalRemaining:late.principalRemaining,daysLate:late.daysLate,latePenalty:late.latePenalty,lateInterest:late.lateInterest,lateCharges:late.lateCharges,totalDue:late.totalDue,status:late.totalDue<=0?"paid":"pending",paidAt:i.paid_at||null};
         });
         return {id:Number(loan.id),principal:Number(loan.principal),interestRate:Number(loan.interest_rate),interestAmount:Number(loan.interest_amount),totalAmount:Number(loan.total_amount),startDate:loan.start_date,dueDate:loan.due_date,installments:Number(loan.installments),frequency:loan.frequency,status:loan.status,notes:loan.notes||"",graceDays:Number(loan.grace_days||0),latePenaltyRate:Number(loan.late_penalty_rate||0),lateInterestDailyRate:Number(loan.late_interest_daily_rate||0),lateInterestCompound:Boolean(loan.late_interest_compound),lateChargeCapRate:Number(loan.late_charge_cap_rate||0),paidAmount:details.reduce((sum:number,i:any)=>sum+i.paidAmount,0),remainingAmount:details.reduce((sum:number,i:any)=>sum+i.remainingAmount,0),installmentsDetail:details};
       });
