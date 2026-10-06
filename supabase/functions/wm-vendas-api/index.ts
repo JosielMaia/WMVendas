@@ -88,7 +88,7 @@ function loanLateCharges(loan:any, installment:any, normalPaidTotal:number, inte
   return {daysLate,latePenalty:penalty,lateInterest:interest,lateCharges:Number((penalty+interest).toFixed(2)),contractualInterest,interestPaid:interestOnlyPaidTotal,remainingInterest:interestRemaining,principalRemaining,principalPaid:Math.min(normalPaidTotal,principalAmount),totalDue:Number((baseRemaining+penalty+interest).toFixed(2))};
 }
 
-const sellerActions=new Set(["session_check","list","barcode_lookup","logout","create_customer","create_sale","create_express_sale","create_product","update_product","mark_paid","customer_history","update_store_order_status","create_loan","record_loan_payment"]);
+const sellerActions=new Set(["session_check","list","barcode_lookup","logout","create_customer","create_sale","create_express_sale","create_product","update_product","mark_paid","customer_history","update_store_order_status","create_loan","record_loan_payment","record_loan_interest_payment"]);
 const viewerActions=new Set(["session_check","list","barcode_lookup","logout"]);
 function canRun(role:string,action:string){return role==="owner"||role==="admin"||(role==="seller"&&sellerActions.has(action))||(role==="viewer"&&viewerActions.has(action))}
 async function audit(session:{tenantId:string;userId:string|null;memberId:string|null;role:string|null},eventType:string,entityType:string,entityId:string|null,metadata:Record<string,unknown>={}){
@@ -536,6 +536,26 @@ Deno.serve(async (req) => {
       if(error)return reply({error:error.message},400);
       await audit(session,"loan.payment_recorded","loan",String(target.loan_id),{installmentId,customerId,amount,paymentMethod:String(body.paymentMethod||"dinheiro")});
       return reply({message:data?.remainingAmount>0?"Pagamento do empréstimo registrado.":"Parcela do empréstimo quitada.",receipt:data});
+    }
+    if (action === "record_loan_interest_payment") {
+      const installmentId=Number(body.installmentId);
+      const customerId=Number(body.customerId);
+      const raw=String(body.amount ?? "").trim();
+      const amount=Number(raw.includes(",") ? raw.replace(/\./g,"").replace(",",".") : raw);
+      if(!Number.isInteger(installmentId)||installmentId<1||!Number.isInteger(customerId)||customerId<1||!Number.isFinite(amount)||amount<=0) return reply({error:"Informe cliente, parcela e valor de juros válidos."},400);
+      const {data:target,error:targetError}=await db.from("wm_loan_installments").select("id,loan_id,tenant_id").eq("tenant_id",sessionTenantId).eq("id",installmentId).maybeSingle();
+      if(targetError)throw targetError;
+      if(!target)return reply({error:"Parcela do empréstimo não encontrada. Atualize a tela."},404);
+      const {data:loan,error:loanError}=await db.from("wm_loans").select("id,customer_id").eq("tenant_id",sessionTenantId).eq("id",target.loan_id).maybeSingle();
+      if(loanError)throw loanError;
+      if(!loan||Number(loan.customer_id)!==customerId)return reply({error:"O cliente desta parcela não corresponde à seleção. Atualize a tela."},409);
+      const paidDate=String(body.paidAt||"").trim();
+      let paidAt=new Date().toISOString();
+      if(paidDate){const parsed=new Date(paidDate);if(Number.isNaN(parsed.getTime()))return reply({error:"Data de recebimento inválida."},400);paidAt=parsed.toISOString();}
+      const {data,error}=await db.rpc("wm_record_loan_interest_payment",{p_tenant_id:sessionTenantId,p_installment_id:installmentId,p_amount:amount,p_payment_method:String(body.paymentMethod||"dinheiro"),p_paid_at:paidAt,p_notes:String(body.notes||"")});
+      if(error)return reply({error:error.message},400);
+      await audit(session,"loan.interest_payment_recorded","loan",String(target.loan_id),{installmentId,customerId,amount,paymentMethod:String(body.paymentMethod||"dinheiro")});
+      return reply({message:"Juros recebidos. O principal permanece em aberto.",receipt:data});
     }
     if (action === "create_cash_entry") {
       const tenantId = sessionTenantId;
