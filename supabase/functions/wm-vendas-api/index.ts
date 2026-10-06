@@ -59,6 +59,31 @@ function businessProfile(activityValue:unknown,segmentValue:unknown){
   return {activity,segment};
 }
 
+function loanLateCharges(loan:any, installment:any, paidTotal:number, asOfDate=new Date().toISOString().slice(0,10)) {
+  const remaining=Math.max(0,Number(installment.amount||0)-paidTotal);
+  const due=new Date(String(installment.due_date||"")+"T00:00:00Z");
+  const asOf=new Date(String(asOfDate)+"T00:00:00Z");
+  const rawDays=Math.floor((asOf.getTime()-due.getTime())/86400000);
+  const grace=Math.max(0,Number(loan.grace_days||0));
+  const daysLate=Math.max(0,rawDays-grace);
+  let penalty=0, interest=0;
+  if(daysLate>0 && remaining>0){
+    penalty=Number((remaining*Number(loan.late_penalty_rate||0)/100).toFixed(2));
+    const daily=Number(loan.late_interest_daily_rate||0)/100;
+    if(daily>0){
+      interest=loan.late_interest_compound
+        ? Number((remaining*(Math.pow(1+daily,daysLate)-1)).toFixed(2))
+        : Number((remaining*daily*daysLate).toFixed(2));
+    }
+    const cap=Number(installment.amount||0)*Number(loan.late_charge_cap_rate||0)/100;
+    if(Number.isFinite(cap) && penalty+interest>cap){
+      if(penalty>=cap){ penalty=Math.max(0,Number(cap.toFixed(2))); interest=0; }
+      else { interest=Math.max(0,Number((cap-penalty).toFixed(2))); }
+    }
+  }
+  return {daysLate,latePenalty:penalty,lateInterest:interest,lateCharges:Number((penalty+interest).toFixed(2)),totalDue:Number((remaining+penalty+interest).toFixed(2))};
+}
+
 const sellerActions=new Set(["session_check","list","barcode_lookup","logout","create_customer","create_sale","create_express_sale","create_product","update_product","mark_paid","customer_history","update_store_order_status","create_loan","record_loan_payment"]);
 const viewerActions=new Set(["session_check","list","barcode_lookup","logout"]);
 function canRun(role:string,action:string){return role==="owner"||role==="admin"||(role==="seller"&&sellerActions.has(action))||(role==="viewer"&&viewerActions.has(action))}
@@ -356,17 +381,19 @@ Deno.serve(async (req) => {
       const startDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedStart)
         ? requestedStart
         : new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString().slice(0,10);
-      const [cash, sales, paymentRows, pendingReceivables, paidBills, loans, loanInstallments, loanPayments] = await Promise.all([
+      const [cash, sales, paymentRows, pendingReceivables, paidBills, loans, loanInstallments, loanPayments, loanPolicy] = await Promise.all([
         db.from("wm_cash_entries").select("id,kind,category,description,amount,payment_method,occurred_at,source_type,source_id").eq("tenant_id",tenantId).gte("occurred_at",startDate).limit(300),
         db.from("wm_sales").select("id,receipt_code,customer_id,quantity,total,discount,cost_total,payment_method,installments,sold_at,wm_products(name,sale_price),wm_customers(name,phone)").eq("tenant_id",tenantId).gte("sold_at",startDate),
         db.from("wm_receivable_payments").select("id,receivable_id,customer_id,amount,paid_at,payment_method,notes,wm_customers(name,phone),wm_receivables(sale_id,installment_number,amount,due_date)").eq("tenant_id",tenantId).gte("paid_at",startDate).order("paid_at",{ascending:false}),
         db.from("wm_receivables").select("id,sale_id,amount,due_date,paid_at,status,installment_number,wm_customers(name)").eq("tenant_id",tenantId).eq("status","pending").order("due_date"),
         db.from("wm_supplier_bills").select("id,amount,paid_at,supplier_name").eq("tenant_id",tenantId).eq("status","paid").gte("paid_at",startDate),
-        db.from("wm_loans").select("id,customer_id,principal,interest_rate,interest_amount,total_amount,start_date,due_date,installments,frequency,status,notes,wm_customers(name,phone)").eq("tenant_id",tenantId).order("created_at",{ascending:false}).limit(200),
+        db.from("wm_loans").select("id,customer_id,principal,interest_rate,interest_amount,total_amount,start_date,due_date,installments,frequency,status,notes,grace_days,late_penalty_rate,late_interest_daily_rate,late_interest_compound,late_charge_cap_rate,wm_customers(name,phone)").eq("tenant_id",tenantId).order("created_at",{ascending:false}).limit(200),
         db.from("wm_loan_installments").select("id,loan_id,installment_number,due_date,amount,status,paid_at").eq("tenant_id",tenantId).order("due_date"),
-        db.from("wm_loan_payments").select("id,loan_id,installment_id,customer_id,amount,paid_at,payment_method,notes,wm_customers(name,phone)").eq("tenant_id",tenantId).order("paid_at",{ascending:false})
+        db.from("wm_loan_payments").select("id,loan_id,installment_id,customer_id,amount,paid_at,payment_method,notes,wm_customers(name,phone)").eq("tenant_id",tenantId).order("paid_at",{ascending:false}),
+        db.rpc("wm_get_loan_policy",{p_tenant_id:tenantId})
       ]);
       for (const result of [cash,sales,paymentRows,pendingReceivables,paidBills,loans,loanInstallments,loanPayments]) if (result.error) throw result.error;
+      if (loanPolicy.error) throw loanPolicy.error;
 
       const cashRows = cash.data || [];
       const manual = cashRows.filter((item:any)=>!["receivable_payment","loan","loan_payment"].includes(item.source_type));
@@ -436,12 +463,13 @@ Deno.serve(async (req) => {
       const loansPayload = loanRows.map((loan:any)=>{
         const installments = loanInstallmentRows.filter((item:any)=>Number(item.loan_id)===Number(loan.id)).map((item:any)=>{
           const paid = loanPaymentRows.filter((p:any)=>Number(p.installment_id)===Number(item.id)).reduce((sum:number,p:any)=>sum+Number(p.amount),0);
-          return {id:item.id,number:Number(item.installment_number),dueDate:item.due_date,amount:Number(item.amount),paidAmount:paid,remainingAmount:Math.max(0,Number(item.amount)-paid),status:paid>=Number(item.amount)-0.005?"paid":"pending",paidAt:item.paid_at||null};
+          const late=loanLateCharges(loan,item,paid);
+          return {id:item.id,number:Number(item.installment_number),dueDate:item.due_date,amount:Number(item.amount),paidAmount:paid,remainingAmount:late.totalDue,principalRemaining:Math.max(0,Number(item.amount)-paid),daysLate:late.daysLate,latePenalty:late.latePenalty,lateInterest:late.lateInterest,lateCharges:late.lateCharges,totalDue:late.totalDue,status:paid>=Number(item.amount)-0.005 && late.lateCharges===0?"paid":"pending",paidAt:item.paid_at||null};
         });
         const paidAmount = installments.reduce((sum:number,i:any)=>sum+i.paidAmount,0);
         const remainingAmount = installments.reduce((sum:number,i:any)=>sum+i.remainingAmount,0);
         const derivedStatus = remainingAmount<=0 ? "paid" : loan.status==="cancelled" ? "cancelled" : "active";
-        return {id:Number(loan.id),customerId:Number(loan.customer_id),customerName:loan.wm_customers?.name||"Cliente",customerPhone:loan.wm_customers?.phone||"",principal:Number(loan.principal),interestRate:Number(loan.interest_rate),interestAmount:Number(loan.interest_amount),totalAmount:Number(loan.total_amount),startDate:loan.start_date,dueDate:loan.due_date,installments:Number(loan.installments),frequency:loan.frequency,status:derivedStatus,notes:loan.notes||"",paidAmount,remainingAmount,installmentsDetail:installments};
+        return {id:Number(loan.id),customerId:Number(loan.customer_id),customerName:loan.wm_customers?.name||"Cliente",customerPhone:loan.wm_customers?.phone||"",principal:Number(loan.principal),interestRate:Number(loan.interest_rate),interestAmount:Number(loan.interest_amount),totalAmount:Number(loan.total_amount),startDate:loan.start_date,dueDate:loan.due_date,installments:Number(loan.installments),frequency:loan.frequency,status:derivedStatus,notes:loan.notes||"",graceDays:Number(loan.grace_days||0),latePenaltyRate:Number(loan.late_penalty_rate||0),lateInterestDailyRate:Number(loan.late_interest_daily_rate||0),lateInterestCompound:Boolean(loan.late_interest_compound),lateChargeCapRate:Number(loan.late_charge_cap_rate||0),paidAmount,remainingAmount,installmentsDetail:installments};
       });
       return reply({
         startDate,
@@ -451,8 +479,21 @@ Deno.serve(async (req) => {
           estimatedProfit:totalSales-costOfGoods-manualExpense,
           loanOutstanding,loanPrincipalActive,loanPaymentsReceived:loanReceipts,loanOutflow
         },
-        entries:movements,receipts,paymentReceipts,loans:loansPayload
+        entries:movements,receipts,paymentReceipts,loans:loansPayload,loanPolicy:loanPolicy.data
       });
+    }
+    if (action === "update_loan_policy") {
+      const graceDays=Math.max(0,Math.min(365,Number(body.graceDays||0)));
+      const latePenaltyRate=Number(body.latePenaltyRate||0);
+      const lateInterestDailyRate=Number(body.lateInterestDailyRate||0);
+      const lateInterestCompound=Boolean(body.lateInterestCompound);
+      const lateChargeCapRate=Number(body.lateChargeCapRate ?? 100);
+      const reminderDays=Array.isArray(body.reminderDays)?body.reminderDays.map((x:any)=>Number(x)).filter((x:number)=>Number.isFinite(x)&&x>=0&&x<=365):[7,3,1,0];
+      if(!Number.isFinite(graceDays)||!Number.isFinite(latePenaltyRate)||!Number.isFinite(lateInterestDailyRate)||!Number.isFinite(lateChargeCapRate)) return reply({error:"Informe uma política de juros válida."},400);
+      const {data,error}=await db.rpc("wm_upsert_loan_policy",{p_tenant_id:sessionTenantId,p_grace_days:graceDays,p_late_penalty_rate:latePenaltyRate,p_late_interest_daily_rate:lateInterestDailyRate,p_late_interest_compound:lateInterestCompound,p_late_charge_cap_rate:lateChargeCapRate,p_reminder_days:reminderDays});
+      if(error)return reply({error:error.message},400);
+      await audit(session,"loan.policy_updated","loan_policy",String(sessionTenantId),{graceDays,latePenaltyRate,lateInterestDailyRate,lateInterestCompound,lateChargeCapRate});
+      return reply({message:"Política de juros salva.",loanPolicy:data});
     }
     if (action === "create_loan") {
       const customerId=Number(body.customerId);
@@ -837,9 +878,10 @@ Deno.serve(async (req) => {
       const loanHistory=(loans||[]).map((loan:any)=>{
         const details=(loanInstallments||[]).filter((i:any)=>Number(i.loan_id)===Number(loan.id)).map((i:any)=>{
           const paid=loanPaymentRows.filter((p:any)=>p.installmentId===Number(i.id)).reduce((sum:number,p:any)=>sum+p.paidAmount,0);
-          return {id:Number(i.id),number:Number(i.installment_number),dueDate:i.due_date,amount:Number(i.amount),paidAmount:paid,remainingAmount:Math.max(0,Number(i.amount)-paid),status:paid>=Number(i.amount)-0.005?"paid":"pending",paidAt:i.paid_at||null};
+          const late=loanLateCharges(loan,i,paid);
+          return {id:Number(i.id),number:Number(i.installment_number),dueDate:i.due_date,amount:Number(i.amount),paidAmount:paid,remainingAmount:late.totalDue,principalRemaining:Math.max(0,Number(i.amount)-paid),daysLate:late.daysLate,latePenalty:late.latePenalty,lateInterest:late.lateInterest,lateCharges:late.lateCharges,totalDue:late.totalDue,status:paid>=Number(i.amount)-0.005 && late.lateCharges===0?"paid":"pending",paidAt:i.paid_at||null};
         });
-        return {id:Number(loan.id),principal:Number(loan.principal),interestRate:Number(loan.interest_rate),interestAmount:Number(loan.interest_amount),totalAmount:Number(loan.total_amount),startDate:loan.start_date,dueDate:loan.due_date,installments:Number(loan.installments),frequency:loan.frequency,status:loan.status,notes:loan.notes||"",paidAmount:details.reduce((sum:number,i:any)=>sum+i.paidAmount,0),remainingAmount:details.reduce((sum:number,i:any)=>sum+i.remainingAmount,0),installmentsDetail:details};
+        return {id:Number(loan.id),principal:Number(loan.principal),interestRate:Number(loan.interest_rate),interestAmount:Number(loan.interest_amount),totalAmount:Number(loan.total_amount),startDate:loan.start_date,dueDate:loan.due_date,installments:Number(loan.installments),frequency:loan.frequency,status:loan.status,notes:loan.notes||"",graceDays:Number(loan.grace_days||0),latePenaltyRate:Number(loan.late_penalty_rate||0),lateInterestDailyRate:Number(loan.late_interest_daily_rate||0),lateInterestCompound:Boolean(loan.late_interest_compound),lateChargeCapRate:Number(loan.late_charge_cap_rate||0),paidAmount:details.reduce((sum:number,i:any)=>sum+i.paidAmount,0),remainingAmount:details.reduce((sum:number,i:any)=>sum+i.remainingAmount,0),installmentsDetail:details};
       });
       const loanPaidTotal=loanPaymentRows.reduce((sum:number,p:any)=>sum+p.paidAmount,0);
       const loanOpenTotal=loanHistory.reduce((sum:number,l:any)=>sum+l.remainingAmount,0);
@@ -850,7 +892,8 @@ Deno.serve(async (req) => {
         installments,
         payments:historyPayments,
         loans:loanHistory,
-        loanPayments:loanPaymentRows
+        loanPayments:loanPaymentRows,
+        loanPolicy:(await db.rpc("wm_get_loan_policy",{p_tenant_id:sessionTenantId})).data
       });
     }
     if (action === "create_supplier_bill") {
