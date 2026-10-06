@@ -2709,7 +2709,6 @@ function FinanceView({
               </form>
             )}
           </section>
-      {showLoanForm && (
           {showLoanForm && (
             <section className="panel finance-form">
               <div className="panel-head"><div><small>NOVO EMPRÉSTIMO</small><h2>Registrar empréstimo</h2></div></div>
