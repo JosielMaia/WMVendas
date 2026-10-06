@@ -2,7 +2,7 @@ const ADMIN_API = "https://ltkstlflqjqcuxzioaoa.supabase.co/functions/v1/wm-vend
 const ADMIN_ACTIONS = new Set([
   "login", "email_login", "signup_owner", "logout", "session_check", "list", "barcode_lookup", "finance_report", "create_cash_entry", "store_admin", "update_store_settings",
   "update_store_order_status", "create_product", "update_product",
-  "create_customer", "create_sale", "create_express_sale", "mark_paid", "create_loan", "record_loan_payment", "create_supplier_bill",
+  "create_customer", "create_sale", "create_express_sale", "mark_paid", "customer_history", "create_loan", "record_loan_payment", "update_loan_policy", "create_supplier_bill",
   "mark_supplier_bill_paid",
   "team_list", "create_team_member", "update_team_member", "change_password",
   "platform_list_tenants", "platform_create_tenant", "platform_update_tenant",
