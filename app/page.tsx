@@ -138,6 +138,7 @@ type CustomerHistory = {
     paidAmount: number;
     paidAt: string;
     paymentMethod: string;
+    paymentType?: string;
     notes: string;
   }>;
   purchases: Array<{
@@ -215,7 +216,10 @@ type FinanceLoanInstallment = {
   dueDate: string;
   amount: number;
   paidAmount: number;
+  interestPaid?: number;
   remainingAmount: number;
+  contractualInterest?: number;
+  remainingInterest?: number;
   principalRemaining?: number;
   daysLate?: number;
   latePenalty?: number;
@@ -260,6 +264,7 @@ type FinancePaymentReceipt = {
   installmentNumber?: number | null;
   dueDate?: string | null;
   paymentMethod: string;
+  paymentType?: string;
   remainingAmount: number;
   label: string;
 };
@@ -2443,6 +2448,7 @@ function FinanceView({
   const [loanPaymentNotes, setLoanPaymentNotes] = useState("");
   const [loanPaymentConfirmed, setLoanPaymentConfirmed] = useState(false);
   const [loanPaymentError, setLoanPaymentError] = useState("");
+  const [loanPaymentMode, setLoanPaymentMode] = useState<"normal" | "interest">("normal");
   const [loanPolicy, setLoanPolicy] = useState<NonNullable<FinanceReport["loanPolicy"]> | null>(null);
   const [showLoanPolicy, setShowLoanPolicy] = useState(false);
   const [savingPolicy, setSavingPolicy] = useState(false);
@@ -2550,7 +2556,20 @@ function FinanceView({
 
   function openLoanPayment(loan: FinanceLoan, installment: FinanceLoanInstallment) {
     setSelectedLoanInstallment({ loan, installment });
+    setLoanPaymentMode("normal");
     setLoanPaymentAmount((installment.totalDue ?? installment.remainingAmount).toFixed(2).replace(".", ","));
+    setLoanPaymentMethod("dinheiro");
+    setLoanPaymentDate(new Date().toISOString().slice(0, 10));
+    setLoanPaymentNotes("");
+    setLoanPaymentConfirmed(false);
+    setLoanPaymentError("");
+  }
+
+  function openLoanInterestPayment(loan: FinanceLoan, installment: FinanceLoanInstallment) {
+    const interestDue = (installment.remainingInterest ?? 0) + (installment.lateCharges ?? 0);
+    setSelectedLoanInstallment({ loan, installment });
+    setLoanPaymentMode("interest");
+    setLoanPaymentAmount(Math.max(0, interestDue).toFixed(2).replace(".", ","));
     setLoanPaymentMethod("dinheiro");
     setLoanPaymentDate(new Date().toISOString().slice(0, 10));
     setLoanPaymentNotes("");
@@ -2579,7 +2598,8 @@ function FinanceView({
     }
     setSaving(true);
     try {
-      await api("record_loan_payment", {
+      const action = loanPaymentMode === "interest" ? "record_loan_interest_payment" : "record_loan_payment";
+      await api(action, {
         installmentId: selectedLoanInstallment.installment.id,
         customerId: selectedLoanInstallment.loan.customerId,
         amount,
@@ -2587,7 +2607,9 @@ function FinanceView({
         paidAt: new Date(loanPaymentDate + "T12:00:00").toISOString(),
         notes: loanPaymentNotes,
       });
-      notify("Pagamento do empréstimo registrado no Caixa.");
+      notify(loanPaymentMode === "interest"
+        ? "Juros recebidos. O principal continua em aberto."
+        : "Pagamento do empréstimo registrado no Caixa.");
       setSelectedLoanInstallment(null);
       await refresh();
     } catch (err) {
@@ -2796,6 +2818,11 @@ function FinanceView({
                           {loan.customerPhone && (
                             <a className="whatsapp" href={loanWhatsappLink(loan,item)} target="_blank" rel="noreferrer"><Send /> Cobrar</a>
                           )}
+                          {((item.remainingInterest ?? 0) + (item.lateCharges ?? 0)) > 0 && (
+                            <Button variant="outline" onClick={()=>openLoanInterestPayment(loan,item)}>
+                              <CircleDollarSign /> Receber somente juros
+                            </Button>
+                          )}
                           <Button variant="outline" onClick={()=>openLoanPayment(loan,item)}><Check /> Registrar pagamento</Button>
                         </div>
                       ) : <span className="payment-status good">Quitada</span>}
@@ -2887,22 +2914,31 @@ function FinanceView({
       {selectedLoanInstallment && (
         <div role="dialog" aria-modal="true" className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-lg rounded-xl border bg-background p-6 shadow-xl">
-            <h2 className="text-lg font-semibold">Registrar pagamento do empréstimo</h2>
+            <h2 className="text-lg font-semibold">
+              {loanPaymentMode === "interest" ? "Receber somente juros" : "Registrar pagamento do empréstimo"}
+            </h2>
             <p className="mt-1 text-sm text-muted-foreground">Cliente: <strong>{selectedLoanInstallment.loan.customerName}</strong> · parcela <strong>{selectedLoanInstallment.installment.number}</strong> · vencimento <strong>{dateBR(selectedLoanInstallment.installment.dueDate)}</strong></p>
+            {loanPaymentMode === "interest" ? (
+              <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                <b>Pagamento somente de juros</b>
+                <div className="mt-1">Juros contratuais restantes: <strong>{money(selectedLoanInstallment.installment.remainingInterest ?? 0)}</strong> · Encargos: <strong>{money(selectedLoanInstallment.installment.lateCharges ?? 0)}</strong></div>
+                <div className="mt-1 font-semibold">Este recebimento não reduz o principal. O saldo principal continua em aberto.</div>
+              </div>
+            ) : null}
             {(selectedLoanInstallment.installment.daysLate||0)>0 && (
               <div className="mt-3 rounded-lg border bg-muted/40 p-3 text-sm">
                 <b>{selectedLoanInstallment.installment.daysLate} dia(s) de atraso</b> · Encargos {money(selectedLoanInstallment.installment.lateCharges||0)} · Total devido {money(selectedLoanInstallment.installment.totalDue||selectedLoanInstallment.installment.remainingAmount)}
               </div>
             )}
             <div className="form-grid mt-5">
-              <div className="field"><Label>Valor recebido</Label><Input inputMode="decimal" value={loanPaymentAmount} onChange={(e)=>setLoanPaymentAmount(e.target.value)} /><small>Saldo: {money(selectedLoanInstallment.installment.remainingAmount)}</small></div>
+              <div className="field"><Label>{loanPaymentMode === "interest" ? "Valor dos juros/encargos" : "Valor recebido"}</Label><Input inputMode="decimal" value={loanPaymentAmount} onChange={(e)=>setLoanPaymentAmount(e.target.value)} /><small>{loanPaymentMode === "interest" ? "Principal permanece: " + money(selectedLoanInstallment.installment.principalRemaining ?? 0) : "Saldo: " + money(selectedLoanInstallment.installment.remainingAmount)}</small></div>
               <div className="field"><Label>Forma</Label><select value={loanPaymentMethod} onChange={(e)=>setLoanPaymentMethod(e.target.value)} className="flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none"><option value="dinheiro">Dinheiro</option><option value="pix">PIX</option><option value="cartao">Cartão</option><option value="transferencia">Transferência</option><option value="outro">Outro</option></select></div>
               <div className="field"><Label>Data do recebimento</Label><Input type="date" value={loanPaymentDate} onChange={(e)=>setLoanPaymentDate(e.target.value)} /></div>
               <div className="field"><Label>Observação</Label><Input value={loanPaymentNotes} onChange={(e)=>setLoanPaymentNotes(e.target.value)} placeholder="Ex.: pagamento antecipado" /></div>
-              <label className="flex items-start gap-3 rounded-lg border bg-muted/40 p-3 text-sm"><input type="checkbox" checked={loanPaymentConfirmed} onChange={(e)=>{setLoanPaymentConfirmed(e.target.checked);if(e.target.checked)setLoanPaymentError("");}} disabled={saving} className="mt-0.5 h-4 w-4 shrink-0" /><span>Confirmo que conferi a cliente, a parcela e o valor antes de registrar o pagamento.</span></label>
+              <label className="flex items-start gap-3 rounded-lg border bg-muted/40 p-3 text-sm"><input type="checkbox" checked={loanPaymentConfirmed} onChange={(e)=>{setLoanPaymentConfirmed(e.target.checked);if(e.target.checked)setLoanPaymentError("");}} disabled={saving} className="mt-0.5 h-4 w-4 shrink-0" /><span>Confirmo que conferi a cliente, a parcela e o valor antes de registrar {loanPaymentMode === "interest" ? "somente os juros" : "o pagamento"}.</span></label>
               {loanPaymentError && <div className="payment-error" role="alert"><AlertCircle /> {loanPaymentError}</div>}
             </div>
-            <div className="dialog-actions mt-5"><Button variant="outline" onClick={()=>setSelectedLoanInstallment(null)} disabled={saving}>Cancelar</Button><Button onClick={confirmLoanPayment} disabled={saving || !loanPaymentConfirmed}>{saving ? <Loader2 className="animate-spin" /> : <Check />} Confirmar pagamento</Button></div>
+            <div className="dialog-actions mt-5"><Button variant="outline" onClick={()=>setSelectedLoanInstallment(null)} disabled={saving}>Cancelar</Button><Button onClick={confirmLoanPayment} disabled={saving || !loanPaymentConfirmed}>{saving ? <Loader2 className="animate-spin" /> : <Check />} {loanPaymentMode === "interest" ? "Receber juros" : "Confirmar pagamento"}</Button></div>
           </div>
         </div>
       )}
