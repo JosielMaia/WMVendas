@@ -2592,8 +2592,14 @@ function FinanceView({
       return;
     }
     const totalDue = selectedLoanInstallment.installment.totalDue ?? selectedLoanInstallment.installment.remainingAmount;
-    if (amount > totalDue + 0.005) {
-      setLoanPaymentError("O pagamento não pode ser maior que o total devido da parcela.");
+    const interestDue = (selectedLoanInstallment.installment.remainingInterest ?? 0) + (selectedLoanInstallment.installment.lateCharges ?? 0);
+    const maxAmount = loanPaymentMode === "interest" ? interestDue : totalDue;
+    if (amount > maxAmount + 0.005) {
+      setLoanPaymentError(
+        loanPaymentMode === "interest"
+          ? "O recebimento somente de juros não pode ser maior que os juros/encargos pendentes."
+          : "O pagamento não pode ser maior que o total devido da parcela.",
+      );
       return;
     }
     setSaving(true);
