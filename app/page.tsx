@@ -2468,6 +2468,9 @@ function FinanceView({
   const [savingReceivable, setSavingReceivable] = useState(false);
   const [receivableFilter, setReceivableFilter] = useState<"all" | "overdue" | "today" | "upcoming">("all");
   const [receivableSearch, setReceivableSearch] = useState("");
+  const [cashSearch, setCashSearch] = useState("");
+  const [cashFilter, setCashFilter] = useState<"all" | "income" | "expense" | "pending">("all");
+  const [cashPeriod, setCashPeriod] = useState<"all" | "today" | "7" | "30">("all");
 
   async function refresh() {
     setLoading(true);
@@ -2719,6 +2722,16 @@ function FinanceView({
     const days = Math.ceil((new Date(e.occurredAt).getTime() - Date.now()) / 86400000);
     return days >= 0 && days <= 3;
   }).length;
+  const filteredCashEntries = (report?.entries || []).filter((entry) => {
+    const query = cashSearch.trim().toLowerCase();
+    const matchesSearch = !query || `${entry.description} ${entry.category}`.toLowerCase().includes(query);
+    const matchesType = cashFilter === "all" || entry.kind === cashFilter;
+    const occurred = new Date(entry.occurredAt).getTime();
+    const now = Date.now();
+    const periodMs = cashPeriod === "today" ? 86400000 : cashPeriod === "7" ? 7 * 86400000 : cashPeriod === "30" ? 30 * 86400000 : Infinity;
+    const matchesPeriod = periodMs === Infinity || (occurred >= now - periodMs && occurred <= now + 86400000);
+    return matchesSearch && matchesType && matchesPeriod;
+  });
 
   const methodLabels: Record<string, string> = {
     dinheiro: "Dinheiro", pix: "PIX", cartao: "Cartão",
@@ -2989,15 +3002,33 @@ function FinanceView({
             </section>
           )}
           <section className="panel finance-list">
-            <div className="panel-head"><div><small>MOVIMENTAÇÃO</small><h2>Lançamentos recentes</h2></div><Button variant="outline" onClick={refresh} disabled={loading}>{loading ? <Loader2 className="spin" /> : "Atualizar"}</Button></div>
-            {loading && !report ? <div className="center"><Loader2 className="spin" /> Carregando financeiro…</div> : report?.entries.map((entry)=>(
+            <div className="panel-head"><div><small>MOVIMENTAÇÃO</small><h2>Caixa e lançamentos</h2></div><Button variant="outline" onClick={refresh} disabled={loading}>{loading ? <Loader2 className="spin" /> : "Atualizar"}</Button></div>
+            <div className="finance-cash-filters">
+              <Input value={cashSearch} onChange={(e) => setCashSearch(e.target.value)} placeholder="Buscar descrição ou categoria" aria-label="Buscar descrição ou categoria" />
+              <div className="finance-filter-pills">
+                {([["all","Todos"],["income","Entradas"],["expense","Despesas"],["pending","Pendentes"]] as const).map(([value,label]) => (
+                  <button type="button" className={cashFilter === value ? "active" : ""} key={value} onClick={() => setCashFilter(value)}>{label}</button>
+                ))}
+              </div>
+              <div className="finance-filter-pills">
+                {([["all","Todo período"],["today","Hoje"],["7","7 dias"],["30","30 dias"]] as const).map(([value,label]) => (
+                  <button type="button" className={cashPeriod === value ? "active" : ""} key={value} onClick={() => setCashPeriod(value)}>{label}</button>
+                ))}
+              </div>
+            </div>
+            <div className="finance-cash-summary">
+              <span>{filteredCashEntries.length} lançamento(s) exibido(s)</span>
+              <span>Entradas: <b>{money(filteredCashEntries.filter((e) => e.kind === "income").reduce((s,e) => s + Number(e.amount || 0), 0))}</b></span>
+              <span>Despesas: <b>{money(filteredCashEntries.filter((e) => e.kind === "expense").reduce((s,e) => s + Number(e.amount || 0), 0))}</b></span>
+            </div>
+            {loading && !report ? <div className="center"><Loader2 className="spin" /> Carregando financeiro…</div> : filteredCashEntries.map((entry)=>(
               <article className="cash-entry" key={entry.id}>
                 <span className={entry.kind==="income" ? "cash-in" : entry.kind==="pending" ? "cash-pending" : "cash-out"}>{entry.kind==="income" ? "+" : entry.kind==="pending" ? "…" : "−"}</span>
                 <div><b>{entry.description}</b><small>{entry.category} · {entry.kind==="pending" ? "vence em " : ""}{new Date(entry.occurredAt).toLocaleDateString("pt-BR")}</small></div>
                 <strong className={entry.kind==="income" ? "positive" : entry.kind==="pending" ? "pending-value" : "negative"}>{entry.kind==="income" ? "+ " : entry.kind==="expense" ? "− " : ""}{money(entry.amount)}</strong>
               </article>
             ))}
-            {!loading && !report?.entries.length && <Empty icon={Wallet} text="Nenhuma movimentação neste período" />}
+            {!loading && !filteredCashEntries.length && <Empty icon={Wallet} text={report?.entries?.length ? "Nenhuma movimentação corresponde aos filtros" : "Nenhuma movimentação neste período"} />}
           </section>
         </>
       )}
