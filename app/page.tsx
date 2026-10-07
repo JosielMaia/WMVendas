@@ -2737,9 +2737,9 @@ function FinanceView({
               <Button variant="outline" onClick={refresh} disabled={loading}>{loading ? <Loader2 className="spin" /> : "Atualizar"}</Button>
             </div>
             {charges.map((charge) => (
-              <article className="charge-full" key={charge.id}>
+              <article className="charge-full finance-receivable-card" key={charge.id}>
                 <ChargeRow c={charge} />
-                <div className="page-actions">
+                <div className="page-actions finance-receivable-actions">
                   {charge.phone && <a className="whatsapp" href={whatsappLink(charge)} target="_blank" rel="noreferrer"><Send /> Cobrar</a>}
                   <Button onClick={() => openReceivablePayment(charge)}><Check /> Registrar pagamento</Button>
                 </div>
@@ -2765,7 +2765,7 @@ function FinanceView({
       />
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
+        <TabsList className="finance-tabs-list">
           <TabsTrigger value="visao">Visão geral</TabsTrigger>
           <TabsTrigger value="receber">Contas a receber</TabsTrigger>
           <TabsTrigger value="emprestimos">Empréstimos</TabsTrigger>
