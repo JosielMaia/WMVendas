@@ -520,13 +520,13 @@ Deno.serve(async (req) => {
     if (action === "update_loan") {
       const loanId=Number(body.loanId), customerId=Number(body.customerId);
       const rawPrincipal=String(body.principal ?? "").trim();
-      const principal=Number(rawPrincipal.includes(",") ? rawPrincipal.replace(/\\./g,"").replace(",",".") : rawPrincipal);
+      const principal=Number(rawPrincipal.includes(",") ? rawPrincipal.replace(/\./g,"").replace(",",".") : rawPrincipal);
       const interestRate=Number(String(body.interestRate ?? "0").replace(",","."));
       const installments=Number(body.installments||1);
       const startDate=String(body.startDate||"");
       const firstDueDate=String(body.firstDueDate||"");
       const frequency=String(body.frequency||"unico");
-      if(!Number.isInteger(loanId)||loanId<1||!Number.isInteger(customerId)||customerId<1||!Number.isFinite(principal)||principal<=0||!Number.isFinite(interestRate)||interestRate<0||!Number.isInteger(installments)||!/^\\d{4}-\\d{2}-\\d{2}$/.test(startDate)||!/ ^\\d{4}-\\d{2}-\\d{2}$/.test(firstDueDate)) return reply({error:"Informe cliente, valor, juros e datas válidos."},400);
+      if(!Number.isInteger(loanId)||loanId<1||!Number.isInteger(customerId)||customerId<1||!Number.isFinite(principal)||principal<=0||!Number.isFinite(interestRate)||interestRate<0||!Number.isInteger(installments)||!/^\\d{4}-\\d{2}-\\d{2}$/.test(startDate)||!/^\d{4}-\d{2}-\d{2}$/.test(firstDueDate)) return reply({error:"Informe cliente, valor, juros e datas válidos."},400);
       if(frequency==="unico" && installments!==1)return reply({error:"Empréstimo único deve ter 1 parcela."},400);
       const {data:loan,error:loanError}=await db.from("wm_loans").select("id,customer_id,status").eq("tenant_id",sessionTenantId).eq("id",loanId).maybeSingle();
       if(loanError)throw loanError;
