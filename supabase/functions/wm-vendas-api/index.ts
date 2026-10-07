@@ -88,7 +88,7 @@ function loanLateCharges(loan:any, installment:any, normalPaidTotal:number, inte
   return {daysLate,latePenalty:penalty,lateInterest:interest,lateCharges:Number((penalty+interest).toFixed(2)),contractualInterest,interestPaid:interestOnlyPaidTotal,remainingInterest:interestRemaining,principalRemaining,principalPaid:Math.min(normalPaidTotal,principalAmount),totalDue:Number((baseRemaining+penalty+interest).toFixed(2))};
 }
 
-const sellerActions=new Set(["session_check","list","barcode_lookup","logout","create_customer","create_sale","create_express_sale","create_product","update_product","mark_paid","customer_history","update_store_order_status","create_loan","record_loan_payment","record_loan_interest_payment"]);
+const sellerActions=new Set(["session_check","list","barcode_lookup","logout","create_customer","create_sale","create_express_sale","create_product","update_product","mark_paid","customer_history","update_store_order_status","create_loan","update_loan","cancel_loan","record_loan_payment","record_loan_interest_payment"]);
 const viewerActions=new Set(["session_check","list","barcode_lookup","logout"]);
 function canRun(role:string,action:string){return role==="owner"||role==="admin"||(role==="seller"&&sellerActions.has(action))||(role==="viewer"&&viewerActions.has(action))}
 async function audit(session:{tenantId:string;userId:string|null;memberId:string|null;role:string|null},eventType:string,entityType:string,entityId:string|null,metadata:Record<string,unknown>={}){
@@ -516,6 +516,42 @@ Deno.serve(async (req) => {
       if(error)return reply({error:error.message},400);
       await audit(session,"loan.created","loan",String(data?.loanId||""),{customerId,principal,interestRate,installments});
       return reply({message:"Empréstimo cadastrado e lançado no Caixa.",loan:data},201);
+    }
+    if (action === "update_loan") {
+      const loanId=Number(body.loanId), customerId=Number(body.customerId);
+      const rawPrincipal=String(body.principal ?? "").trim();
+      const principal=Number(rawPrincipal.includes(",") ? rawPrincipal.replace(/\\./g,"").replace(",",".") : rawPrincipal);
+      const interestRate=Number(String(body.interestRate ?? "0").replace(",","."));
+      const installments=Number(body.installments||1);
+      const startDate=String(body.startDate||"");
+      const firstDueDate=String(body.firstDueDate||"");
+      const frequency=String(body.frequency||"unico");
+      if(!Number.isInteger(loanId)||loanId<1||!Number.isInteger(customerId)||customerId<1||!Number.isFinite(principal)||principal<=0||!Number.isFinite(interestRate)||interestRate<0||!Number.isInteger(installments)||!/^\\d{4}-\\d{2}-\\d{2}$/.test(startDate)||!/ ^\\d{4}-\\d{2}-\\d{2}$/.test(firstDueDate)) return reply({error:"Informe cliente, valor, juros e datas válidos."},400);
+      if(frequency==="unico" && installments!==1)return reply({error:"Empréstimo único deve ter 1 parcela."},400);
+      const {data:loan,error:loanError}=await db.from("wm_loans").select("id,customer_id,status").eq("tenant_id",sessionTenantId).eq("id",loanId).maybeSingle();
+      if(loanError)throw loanError;
+      if(!loan)return reply({error:"Empréstimo não encontrado."},404);
+      if(loan.status==="cancelled")return reply({error:"Este empréstimo está cancelado."},409);
+      const {count}=await db.from("wm_loan_payments").select("id",{count:"exact",head:true}).eq("tenant_id",sessionTenantId).eq("loan_id",loanId);
+      if((count||0)>0)return reply({error:"Este empréstimo já possui pagamentos e não pode ser alterado estruturalmente."},409);
+      const {data,error}=await db.rpc("wm_update_loan",{p_tenant_id:sessionTenantId,p_loan_id:loanId,p_customer_id:customerId,p_principal:principal,p_interest_rate:interestRate,p_start_date:startDate,p_first_due_date:firstDueDate,p_installments:installments,p_frequency:frequency,p_notes:String(body.notes||"")});
+      if(error)return reply({error:error.message},400);
+      await audit(session,"loan.updated","loan",String(loanId),{customerId,principal,interestRate,installments});
+      return reply({message:"Empréstimo atualizado com sucesso.",loan:data});
+    }
+    if (action === "cancel_loan") {
+      const loanId=Number(body.loanId);
+      const reason=String(body.reason||"").trim();
+      if(!Number.isInteger(loanId)||loanId<1)return reply({error:"Empréstimo inválido."},400);
+      const {data:loan,error:loanError}=await db.from("wm_loans").select("id,customer_id,status").eq("tenant_id",sessionTenantId).eq("id",loanId).maybeSingle();
+      if(loanError)throw loanError;
+      if(!loan)return reply({error:"Empréstimo não encontrado."},404);
+      const {count}=await db.from("wm_loan_payments").select("id",{count:"exact",head:true}).eq("tenant_id",sessionTenantId).eq("loan_id",loanId);
+      if((count||0)>0)return reply({error:"Este empréstimo já possui pagamentos e não pode ser cancelado automaticamente."},409);
+      const {data,error}=await db.rpc("wm_cancel_loan",{p_tenant_id:sessionTenantId,p_loan_id:loanId,p_reason:reason});
+      if(error)return reply({error:error.message},400);
+      await audit(session,"loan.cancelled","loan",String(loanId),{reason});
+      return reply({message:"Empréstimo cancelado e estorno lançado no Caixa.",loan:data});
     }
     if (action === "record_loan_payment") {
       const installmentId=Number(body.installmentId);
