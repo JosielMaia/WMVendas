@@ -205,3 +205,8 @@
 .finance-filter-pills button:hover{background:var(--muted)}
 .finance-filter-pills button.active{background:#7b2448;color:#fff;border-color:#7b2448}
 @media(max-width:600px){.finance-filter-pills{overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px;scrollbar-width:none}.finance-filter-pills::-webkit-scrollbar{display:none}.finance-filter-pills button{flex:0 0 auto}.finance-receivable-filters input{min-height:42px}}
+.finance-cash-filters{display:grid;gap:10px;margin:0 0 12px}
+.finance-cash-filters .finance-filter-pills{margin:0}
+.finance-cash-summary{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 14px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--muted);font-size:12px;color:var(--muted-foreground)}
+.finance-cash-summary b{color:var(--foreground)}
+@media(max-width:600px){.finance-cash-filters input{min-height:42px}.finance-cash-summary{display:grid;grid-template-columns:1fr 1fr;gap:7px}.finance-cash-summary span:first-child{grid-column:1/-1}}
