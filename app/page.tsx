@@ -2518,7 +2518,7 @@ function FinanceView({
       const rawPrincipal = String(form.get("principal") || "").trim();
       const principal = Number(
         rawPrincipal.includes(",")
-          ? rawPrincipal.replace(/\\./g, "").replace(",", ".")
+          ? rawPrincipal.replace(/\./g, "").replace(",", ".")
           : rawPrincipal,
       );
       const interestRate = Number(String(form.get("interestRate") || "0").replace(",", "."));
