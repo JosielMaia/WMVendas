@@ -2444,6 +2444,7 @@ function FinanceView({
   const [showEntryForm, setShowEntryForm] = useState(false);
   const [showLoanForm, setShowLoanForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [selectedLoanEdit, setSelectedLoanEdit] = useState<FinanceLoan | null>(null);
   const [selectedLoanInstallment, setSelectedLoanInstallment] = useState<{
     loan: FinanceLoan;
     installment: FinanceLoanInstallment;
@@ -2570,6 +2571,77 @@ function FinanceView({
       notify(err instanceof Error ? err.message : "Não foi possível salvar a política.");
     } finally {
       setSavingPolicy(false);
+    }
+  }
+
+  function loanHasPayments(loan: FinanceLoan) {
+    return loan.installmentsDetail.some((item) => (item.paidAmount || 0) > 0 || (item.interestPaid || 0) > 0);
+  }
+
+  function openLoanEdit(loan: FinanceLoan) {
+    if (loanHasPayments(loan)) {
+      notify("Este empréstimo já possui pagamentos e não pode ter seus dados estruturais alterados.");
+      return;
+    }
+    setSelectedLoanEdit(loan);
+  }
+
+  async function saveLoanEdit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!selectedLoanEdit) return;
+    setSaving(true);
+    try {
+      const form = new FormData(e.currentTarget);
+      const rawPrincipal = String(form.get("principal") || "").trim();
+      const principal = Number(rawPrincipal.includes(",") ? rawPrincipal.replace(/\\./g, "").replace(",", ".") : rawPrincipal);
+      const interestRate = Number(String(form.get("interestRate") || "0").replace(",", "."));
+      const installments = Number(form.get("installments") || "1");
+      const customerId = Number(form.get("customerId") || "0");
+      const values = {
+        loanId: selectedLoanEdit.id,
+        customerId,
+        principal,
+        interestRate,
+        startDate: String(form.get("startDate") || ""),
+        firstDueDate: String(form.get("firstDueDate") || ""),
+        installments,
+        frequency: String(form.get("frequency") || "unico"),
+        notes: String(form.get("notes") || ""),
+      };
+      if (!Number.isInteger(customerId) || customerId < 1) throw new Error("Selecione a cliente.");
+      if (!Number.isFinite(principal) || principal <= 0) throw new Error("Informe um valor de empréstimo válido.");
+      if (!Number.isFinite(interestRate) || interestRate < 0) throw new Error("Informe uma taxa de juros válida.");
+      if (!Number.isInteger(installments) || installments < 1 || installments > 120) throw new Error("Informe uma quantidade de parcelas válida.");
+      await api("update_loan", values);
+      notify("Empréstimo atualizado com sucesso.");
+      setSelectedLoanEdit(null);
+      await refresh();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Não foi possível atualizar o empréstimo.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function cancelLoan(loan: FinanceLoan) {
+    if (loanHasPayments(loan)) {
+      notify("Este empréstimo já possui pagamentos e não pode ser cancelado automaticamente.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `Cancelar o empréstimo #${loan.id} de ${loan.customerName}? O principal de ${money(loan.principal)} será estornado no Caixa. O registro permanecerá no histórico.`,
+    );
+    if (!confirmed) return;
+    const reason = window.prompt("Motivo do cancelamento (opcional):", "Cadastro incorreto");
+    setSaving(true);
+    try {
+      await api("cancel_loan", { loanId: loan.id, reason: reason || "" });
+      notify("Empréstimo cancelado e estorno lançado no Caixa.");
+      await refresh();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Não foi possível cancelar o empréstimo.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -2862,6 +2934,43 @@ function FinanceView({
               </form>
             )}
           </section>
+          {selectedLoanEdit && (
+            <section className="panel finance-form">
+              <div className="panel-head">
+                <div><small>EDITAR EMPRÉSTIMO #{selectedLoanEdit.id}</small><h2>Corrigir cadastro</h2></div>
+                <Button type="button" variant="outline" onClick={() => setSelectedLoanEdit(null)}>Fechar</Button>
+              </div>
+              <p className="text-sm text-muted-foreground">Este empréstimo ainda não possui pagamentos. Você pode corrigir cliente, valor, juros, datas e parcelas com segurança.</p>
+              <form key={selectedLoanEdit.id} onSubmit={saveLoanEdit} className="form">
+                <div className="field">
+                  <Label>Cliente</Label>
+                  <Select name="customerId" defaultValue={String(selectedLoanEdit.customerId)} required>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>{customers.map((c)=><SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div className="field"><Label>Valor emprestado</Label><Input name="principal" inputMode="decimal" defaultValue={selectedLoanEdit.principal.toFixed(2).replace(".", ",")} required /></div>
+                <div className="field"><Label>Juros (%)</Label><Input name="interestRate" type="number" min="0" step="0.01" defaultValue={selectedLoanEdit.interestRate} required /></div>
+                <div className="field"><Label>Data do empréstimo</Label><Input name="startDate" type="date" defaultValue={selectedLoanEdit.startDate} required /></div>
+                <div className="field"><Label>Primeiro vencimento</Label><Input name="firstDueDate" type="date" defaultValue={selectedLoanEdit.dueDate} required /></div>
+                <div className="field"><Label>Parcelas</Label><Input name="installments" type="number" min="1" max="120" defaultValue={selectedLoanEdit.installments} required /></div>
+                <div className="field">
+                  <Label>Periodicidade</Label>
+                  <Select name="frequency" defaultValue={selectedLoanEdit.frequency}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unico">Único</SelectItem><SelectItem value="semanal">Semanal</SelectItem><SelectItem value="quinzenal">Quinzenal</SelectItem><SelectItem value="mensal">Mensal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="field full"><Label>Observação</Label><Input name="notes" defaultValue={selectedLoanEdit.notes} placeholder="Observação" /></div>
+                <div className="dialog-actions full">
+                  <Button type="button" variant="outline" onClick={() => setSelectedLoanEdit(null)}>Cancelar</Button>
+                  <Button type="submit" disabled={saving}>{saving ? <Loader2 className="spin" /> : <Check />} Salvar alterações</Button>
+                </div>
+              </form>
+            </section>
+          )}
           {showLoanForm && (
             <section className="panel finance-form">
               <div className="panel-head"><div><small>NOVO EMPRÉSTIMO</small><h2>Registrar empréstimo</h2></div></div>
@@ -2936,6 +3045,14 @@ function FinanceView({
                 <div className="customer-badges">
                   <span className={loan.status==="paid" ? "payment-status good" : "payment-status warning"}>{loan.status==="paid" ? "Quitado" : "Ativo"}</span>
                   <span className="loyalty loyalty-prata">{loan.installments} parcela(s)</span>
+                </div>
+                <div className="page-actions">
+                  {!loanHasPayments(loan) && loan.status === "active" && (
+                    <>
+                      <Button variant="outline" onClick={() => openLoanEdit(loan)}><Pencil /> Editar</Button>
+                      <Button variant="outline" onClick={() => void cancelLoan(loan)} disabled={saving}><X /> Cancelar empréstimo</Button>
+                    </>
+                  )}
                 </div>
                 <div className="list-panel">
                   {loan.installmentsDetail.map((item)=>(
