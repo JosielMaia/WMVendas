@@ -864,6 +864,7 @@ export default function HomePage() {
                   notify={notify}
                   customers={data.customers}
                   charges={data.charges}
+                  reloadData={load}
                   openCustomerHistory={async (customer) => {
                     try {
                       const j = await api("customer_history", { customerId: customer.id });
@@ -2432,6 +2433,7 @@ function FinanceView({
   notify: (message: string) => void;
   customers: Customer[];
   charges: Charge[];
+  reloadData: () => Promise<void>;
   openCustomerHistory: (customer: Customer) => void;
 }) {
   const [report, setReport] = useState<FinanceReport | null>(null);
@@ -2628,6 +2630,7 @@ function FinanceView({
       });
       notify(result?.message || "Pagamento registrado com sucesso.");
       setSelectedReceivable(null);
+      await reloadData();
       await refresh();
     } catch (err) {
       setReceivableError(err instanceof Error ? err.message : "Não foi possível registrar o pagamento.");
