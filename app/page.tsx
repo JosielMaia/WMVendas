@@ -2726,10 +2726,12 @@ function FinanceView({
     const query = cashSearch.trim().toLowerCase();
     const matchesSearch = !query || `${entry.description} ${entry.category}`.toLowerCase().includes(query);
     const matchesType = cashFilter === "all" || entry.kind === cashFilter;
-    const occurred = new Date(entry.occurredAt).getTime();
-    const now = Date.now();
-    const periodMs = cashPeriod === "today" ? 86400000 : cashPeriod === "7" ? 7 * 86400000 : cashPeriod === "30" ? 30 * 86400000 : Infinity;
-    const matchesPeriod = periodMs === Infinity || (occurred >= now - periodMs && occurred <= now + 86400000);
+    const dateKey = new Date(entry.occurredAt).toLocaleDateString("en-CA");
+    const todayKey = new Date().toLocaleDateString("en-CA");
+    const todayTime = new Date(`${todayKey}T00:00:00`).getTime();
+    const entryTime = new Date(`${dateKey}T00:00:00`).getTime();
+    const periodDays = cashPeriod === "today" ? 0 : cashPeriod === "7" ? 6 : cashPeriod === "30" ? 29 : null;
+    const matchesPeriod = periodDays === null || (entryTime >= todayTime - periodDays * 86400000 && entryTime <= todayTime);
     return matchesSearch && matchesType && matchesPeriod;
   });
 
