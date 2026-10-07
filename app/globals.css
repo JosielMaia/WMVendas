@@ -172,3 +172,28 @@
 .stock-strip{grid-template-columns:repeat(4,minmax(0,1fr))}.stock-strip .stock-profit{background:#f2e8c9;border-radius:13px}.stock-strip .stock-profit svg,.stock-strip .stock-profit b{color:#745219}.stock-strip .stock-profit b{font-size:17px}
 @media(max-width:1100px) and (min-width:901px){.stock-strip{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.stock-strip>div:nth-child(3){border-left:0}.stock-strip>div:nth-child(n+3){border-top:1px solid #e3cbd4;padding-top:14px}}
 @media(max-width:900px){.stock-strip{grid-template-columns:1fr}.stock-strip .stock-profit{padding:12px!important}}
+
+
+/* Acabamento mobile — Financeiro */
+.finance-tabs-list{width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden;justify-content:flex-start;scrollbar-width:none;overscroll-behavior-x:contain;touch-action:pan-x;-webkit-overflow-scrolling:touch}
+.finance-tabs-list::-webkit-scrollbar{display:none}
+.finance-tabs-list [data-slot="tabs-trigger"]{flex:0 0 auto;min-width:max-content;padding-left:13px;padding-right:13px}
+.finance-receivable-card{display:grid;gap:10px}
+.finance-receivable-actions{display:flex;flex-wrap:wrap;gap:8px}
+.finance-receivable-actions>*{min-height:40px}
+.finance-mobile-summary{margin-bottom:12px}
+@media(max-width:600px){
+  .finance-tabs-list{margin-right:-2px;padding-right:12px}
+  .finance-tabs-list [data-slot="tabs-trigger"]{font-size:12px}
+  .finance-stats{grid-template-columns:1fr 1fr;gap:9px}
+  .finance-stats .stat{padding:12px;min-width:0}
+  .finance-stats .stat strong{font-size:18px;overflow-wrap:anywhere}
+  .finance-stats .stat span{font-size:9px;line-height:1.3}
+  .finance-receivable-card{padding:12px}
+  .finance-receivable-actions{display:grid;grid-template-columns:1fr}
+  .finance-receivable-actions>*{width:100%;justify-content:center}
+}
+@media(max-width:390px){
+  .finance-stats{grid-template-columns:1fr}
+  .finance-tabs-list [data-slot="tabs-trigger"]{padding-left:11px;padding-right:11px}
+}
