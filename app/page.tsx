@@ -3043,7 +3043,7 @@ function FinanceView({
                   <div><small>Total</small><b>{money(loan.totalAmount)}</b></div>
                 </div>
                 <div className="customer-badges">
-                  <span className={loan.status==="paid" ? "payment-status good" : "payment-status warning"}>{loan.status==="paid" ? "Quitado" : "Ativo"}</span>
+                  <span className={loan.status==="paid" ? "payment-status good" : loan.status==="cancelled" ? "payment-status" : "payment-status warning"}>{loan.status==="paid" ? "Quitado" : loan.status==="cancelled" ? "Cancelado" : "Ativo"}</span>
                   <span className="loyalty loyalty-prata">{loan.installments} parcela(s)</span>
                 </div>
                 <div className="page-actions">
@@ -3061,7 +3061,7 @@ function FinanceView({
                         <b>Parcela {item.number} · {money(item.amount)}</b>
                         <small>Vencimento {dateBR(item.dueDate)} · {item.status==="paid" ? "Quitada" : "Saldo "+money(item.remainingAmount)}{(item.daysLate||0)>0 ? ` · ${item.daysLate} dia(s) de atraso` : ""}</small>{(item.lateCharges||0)>0 && <small className="text-amber-700">Encargos por atraso: {money(item.lateCharges||0)}</small>}
                       </div>
-                      {item.remainingAmount > 0 ? (
+                      {loan.status === "active" && item.remainingAmount > 0 ? (
                         <div className="page-actions">
                           {loan.customerPhone && (
                             <a className="whatsapp" href={loanWhatsappLink(loan,item)} target="_blank" rel="noreferrer"><Send /> Cobrar</a>
