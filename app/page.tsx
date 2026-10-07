@@ -2427,6 +2427,8 @@ function FinanceView({
   api,
   notify,
   customers,
+  charges,
+  reloadData,
   openCustomerHistory,
 }: {
   api: (action: string, payload?: Record<string, unknown>) => Promise<any>;
