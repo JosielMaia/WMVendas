@@ -1907,56 +1907,7 @@ function CustomerHistoryDialog({
                   {!history.purchases.length && <Empty icon={CircleDollarSign} text="Nenhuma compra registrada." />}
                 </>
               )}
-              {tab === "receber" && (
-        <>
-          <div className="stats mini">
-            <article className="stat">
-              <small>Em aberto</small>
-              <strong>{money(charges.reduce((sum, c) => sum + Math.max(0, c.amount), 0))}</strong>
-              <span>{charges.length} parcela(s)</span>
-            </article>
-            <article className="stat">
-              <small>Vencidas</small>
-              <strong>{charges.filter((c) => c.status === "overdue").length}</strong>
-              <span>precisam de cobrança</span>
-            </article>
-            <article className="stat">
-              <small>Próximas</small>
-              <strong>{charges.filter((c) => c.status !== "overdue").length}</strong>
-              <span>a vencer</span>
-            </article>
-          </div>
-          <section className="panel list-panel">
-            <div className="panel-head">
-              <div>
-                <small>CONTAS A RECEBER</small>
-                <h2>Parcelas de clientes</h2>
-              </div>
-              <Button variant="outline" onClick={refresh} disabled={loading}>
-                {loading ? <Loader2 className="spin" /> : "Atualizar"}
-              </Button>
-            </div>
-            {charges.map((charge) => (
-              <article className="charge-full" key={charge.id}>
-                <ChargeRow c={charge} />
-                <div className="page-actions">
-                  {charge.phone && (
-                    <a className="whatsapp" href={whatsappLink(charge)} target="_blank" rel="noreferrer">
-                      <Send /> Cobrar
-                    </a>
-                  )}
-                  <Button onClick={() => openReceivablePayment(charge)}>
-                    <Check /> Registrar pagamento
-                  </Button>
-                </div>
-              </article>
-            ))}
-            {!charges.length && <Empty icon={CircleDollarSign} text="Nenhuma parcela em aberto" />}
-          </section>
-        </>
-      )}
-
-      {tab === "emprestimos" && (
+              {tab === "emprestimos" && (
                 <>
                   <div className="stats mini">
                     <article className="stat"><small>Total emprestado</small><strong>{money(history.summary.loanTotalBorrowed)}</strong></article>
@@ -2768,7 +2719,33 @@ function FinanceView({
         title="Financeiro WM Vendas"
         action={
           <div className="page-actions">
-            {tab === "emprestimos" && (
+            {tab === "receber" && (
+        <>
+          <div className="stats mini">
+            <article className="stat"><small>Em aberto</small><strong>{money(charges.reduce((sum, c) => sum + Math.max(0, c.amount), 0))}</strong><span>{charges.length} parcela(s)</span></article>
+            <article className="stat"><small>Vencidas</small><strong>{charges.filter((c) => c.status === "overdue").length}</strong><span>precisam de cobrança</span></article>
+            <article className="stat"><small>Próximas</small><strong>{charges.filter((c) => c.status !== "overdue").length}</strong><span>a vencer</span></article>
+          </div>
+          <section className="panel list-panel">
+            <div className="panel-head">
+              <div><small>CONTAS A RECEBER</small><h2>Parcelas de clientes</h2></div>
+              <Button variant="outline" onClick={refresh} disabled={loading}>{loading ? <Loader2 className="spin" /> : "Atualizar"}</Button>
+            </div>
+            {charges.map((charge) => (
+              <article className="charge-full" key={charge.id}>
+                <ChargeRow c={charge} />
+                <div className="page-actions">
+                  {charge.phone && <a className="whatsapp" href={whatsappLink(charge)} target="_blank" rel="noreferrer"><Send /> Cobrar</a>}
+                  <Button onClick={() => openReceivablePayment(charge)}><Check /> Registrar pagamento</Button>
+                </div>
+              </article>
+            ))}
+            {!charges.length && <Empty icon={CircleDollarSign} text="Nenhuma parcela em aberto" />}
+          </section>
+        </>
+      )}
+
+      {tab === "emprestimos" && (
               <Button onClick={() => setShowLoanForm((v) => !v)}>
                 <Plus /> {showLoanForm ? "Fechar" : "Novo empréstimo"}
               </Button>
@@ -3076,6 +3053,29 @@ function FinanceView({
                 {savingReceivable ? <><Loader2 className="animate-spin" /> Registrando...</> : <><Check /> Confirmar pagamento</>}
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {selectedReceivable && (
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-xl border bg-background p-6 shadow-xl">
+            <h2 className="text-lg font-semibold">Registrar pagamento</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Cliente: <strong>{selectedReceivable.customerName}</strong> · Parcela <strong>{selectedReceivable.installmentNumber}</strong> · vencimento <strong>{dateBR(selectedReceivable.dueDate)}</strong></p>
+            {selectedReceivable.phone && <p className="mt-1 text-xs text-muted-foreground">WhatsApp: {selectedReceivable.phone}</p>}
+            <div className="mt-4 rounded-lg border bg-muted/40 p-3 text-sm">
+              <div className="flex items-center justify-between gap-3"><span>Saldo da parcela</span><strong className="text-base">{money(selectedReceivable.amount)}</strong></div>
+              <p className="mt-1 text-xs text-muted-foreground">O vencimento original é preservado. A data abaixo registra quando o dinheiro realmente entrou.</p>
+            </div>
+            <div className="form-grid mt-5">
+              <div className="field"><Label>Valor recebido</Label><Input inputMode="decimal" value={receivableAmount} onChange={(e)=>setReceivableAmount(e.target.value)} autoFocus /></div>
+              <div className="field"><Label>Forma de pagamento</Label><select value={receivableMethod} onChange={(e)=>setReceivableMethod(e.target.value)} className="flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none"><option value="dinheiro">Dinheiro</option><option value="pix">PIX</option><option value="cartao">Cartão</option><option value="transferencia">Transferência</option><option value="outro">Outro</option></select></div>
+              <div className="field"><Label>Data do recebimento</Label><Input type="date" value={receivableDate} onChange={(e)=>setReceivableDate(e.target.value)} /></div>
+              <div className="field"><Label>Observação</Label><Input value={receivableNotes} onChange={(e)=>setReceivableNotes(e.target.value)} placeholder="Ex.: pagamento antecipado" /></div>
+              <label className="flex items-start gap-3 rounded-lg border bg-muted/40 p-3 text-sm full"><input type="checkbox" checked={receivableConfirmed} onChange={(e)=>{setReceivableConfirmed(e.target.checked);if(e.target.checked)setReceivableError("");}} disabled={savingReceivable} className="mt-0.5 h-4 w-4 shrink-0" /><span>Confirmei a cliente, a parcela e o valor antes de registrar o pagamento.</span></label>
+              {receivableError && <div className="payment-error" role="alert"><AlertCircle /> {receivableError}</div>}
+            </div>
+            <div className="dialog-actions mt-5"><Button variant="outline" onClick={()=>setSelectedReceivable(null)} disabled={savingReceivable}>Cancelar</Button><Button onClick={confirmReceivablePayment} disabled={savingReceivable || !receivableConfirmed}>{savingReceivable ? <><Loader2 className="animate-spin" /> Registrando...</> : <><Check /> Confirmar pagamento</>}</Button></div>
           </div>
         </div>
       )}
