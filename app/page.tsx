@@ -2466,6 +2466,8 @@ function FinanceView({
   const [receivableConfirmed, setReceivableConfirmed] = useState(false);
   const [receivableError, setReceivableError] = useState("");
   const [savingReceivable, setSavingReceivable] = useState(false);
+  const [receivableFilter, setReceivableFilter] = useState<"all" | "overdue" | "today" | "upcoming">("all");
+  const [receivableSearch, setReceivableSearch] = useState("");
 
   async function refresh() {
     setLoading(true);
@@ -2703,6 +2705,15 @@ function FinanceView({
       const days = Math.ceil((new Date(i.dueDate + "T12:00:00").getTime() - Date.now()) / 86400000);
       return days >= 0 && days <= 3;
     }).length, 0);
+  const todayBR = new Date().toISOString().slice(0, 10);
+  const filteredReceivables = charges.filter((charge) => {
+    const matchesSearch = !receivableSearch.trim() || `${charge.customerName} ${charge.phone}`.toLowerCase().includes(receivableSearch.trim().toLowerCase());
+    if (!matchesSearch) return false;
+    if (receivableFilter === "overdue") return charge.status === "overdue";
+    if (receivableFilter === "today") return charge.dueDate === todayBR;
+    if (receivableFilter === "upcoming") return charge.dueDate > todayBR && charge.dueDate <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    return true;
+  });
   const receivableDueSoon = (report?.entries || []).filter((e) => {
     if (e.kind !== "pending") return false;
     const days = Math.ceil((new Date(e.occurredAt).getTime() - Date.now()) / 86400000);
@@ -2729,14 +2740,22 @@ function FinanceView({
           <div className="stats mini">
             <article className="stat"><small>Em aberto</small><strong>{money(charges.reduce((sum, c) => sum + Math.max(0, c.amount), 0))}</strong><span>{charges.length} parcela(s)</span></article>
             <article className="stat"><small>Vencidas</small><strong>{charges.filter((c) => c.status === "overdue").length}</strong><span>precisam de cobrança</span></article>
-            <article className="stat"><small>Próximas</small><strong>{charges.filter((c) => c.status !== "overdue").length}</strong><span>a vencer</span></article>
+            <article className="stat"><small>Próximas</small><strong>{charges.filter((c) => c.dueDate > todayBR).length}</strong><span>a vencer</span></article>
           </div>
           <section className="panel list-panel">
             <div className="panel-head">
               <div><small>CONTAS A RECEBER</small><h2>Parcelas de clientes</h2></div>
               <Button variant="outline" onClick={refresh} disabled={loading}>{loading ? <Loader2 className="spin" /> : "Atualizar"}</Button>
             </div>
-            {charges.map((charge) => (
+            <div className="finance-receivable-filters">
+              <Input value={receivableSearch} onChange={(e) => setReceivableSearch(e.target.value)} placeholder="Buscar cliente ou WhatsApp" aria-label="Buscar cliente ou WhatsApp" />
+              <div className="finance-filter-pills">
+                {([["all","Todas"],["overdue","Vencidas"],["today","Hoje"],["upcoming","Próximos 7 dias"]] as const).map(([value,label]) => (
+                  <button type="button" className={receivableFilter === value ? "active" : ""} key={value} onClick={() => setReceivableFilter(value)}>{label}</button>
+                ))}
+              </div>
+            </div>
+            {filteredReceivables.map((charge) => (
               <article className="charge-full finance-receivable-card" key={charge.id}>
                 <ChargeRow c={charge} />
                 <div className="page-actions finance-receivable-actions">
@@ -2745,7 +2764,7 @@ function FinanceView({
                 </div>
               </article>
             ))}
-            {!charges.length && <Empty icon={CircleDollarSign} text="Nenhuma parcela em aberto" />}
+            {!filteredReceivables.length && <Empty icon={CircleDollarSign} text={charges.length ? "Nenhuma parcela encontrada com esses filtros" : "Nenhuma parcela em aberto"} />}
           </section>
         </>
       )}
