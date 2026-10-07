@@ -197,3 +197,11 @@
   .finance-stats{grid-template-columns:1fr}
   .finance-tabs-list [data-slot="tabs-trigger"]{padding-left:11px;padding-right:11px}
 }
+
+/* Contas a receber — filtros */
+.finance-receivable-filters{display:grid;gap:10px;margin:0 0 14px}
+.finance-filter-pills{display:flex;gap:8px;flex-wrap:wrap}
+.finance-filter-pills button{border:1px solid var(--border);background:var(--background);border-radius:999px;padding:7px 12px;font-size:12px;cursor:pointer;transition:.15s}
+.finance-filter-pills button:hover{background:var(--muted)}
+.finance-filter-pills button.active{background:#7b2448;color:#fff;border-color:#7b2448}
+@media(max-width:600px){.finance-filter-pills{overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px;scrollbar-width:none}.finance-filter-pills::-webkit-scrollbar{display:none}.finance-filter-pills button{flex:0 0 auto}.finance-receivable-filters input{min-height:42px}}
