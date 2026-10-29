@@ -999,14 +999,14 @@ function LoginScreen({
   login: (action: string, payload: Record<string, unknown>) => Promise<void>;
   loading: boolean;
 }) {
-  const [mode, setMode] = useState<"email" | "pin">("email"),
+  const [mode, setMode] = useState<"email" | "pin" | "bootstrap">("email"),
     [error, setError] = useState("");
   async function send(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
     const values = Object.fromEntries(new FormData(e.currentTarget));
     try {
-      await login(mode === "pin" ? "login" : "email_login", values);
+      await login(mode === "pin" ? "login" : mode === "bootstrap" ? "platform_bootstrap_admin" : "email_login", values);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível entrar");
     }
@@ -1016,11 +1016,13 @@ function LoginScreen({
       <section className="login-card multi-login">
         <span className="login-mark">WM</span>
         <small>GESTÃO E LOJA VIRTUAL</small>
-        <h1>{mode === "pin" ? "Acesso WM Vendas" : "Entre na sua conta"}</h1>
+        <h1>{mode === "pin" ? "Acesso WM Vendas" : mode === "bootstrap" ? "Configurar administração" : "Entre na sua conta"}</h1>
         <p>
           {mode === "pin"
             ? "Acesso de 6 números da Walquíria."
-            : "Acesse a gestão exclusiva da sua empresa."}
+            : mode === "bootstrap"
+              ? "Crie seu acesso pessoal de superadministrador. Esta configuração só pode ser feita uma vez."
+              : "Acesse a gestão exclusiva da sua empresa."}
         </p>
         <div className="login-modes">
           <button
@@ -1043,6 +1045,16 @@ function LoginScreen({
           >
             PIN antigo
           </button>
+          <button
+            type="button"
+            className={mode === "bootstrap" ? "active" : ""}
+            onClick={() => {
+              setMode("bootstrap");
+              setError("");
+            }}
+          >
+            Primeiro acesso admin
+          </button>
         </div>
         <form onSubmit={send}>
           {mode === "pin" ? (
@@ -1050,41 +1062,24 @@ function LoginScreen({
               <Label htmlFor="pin">PIN de acesso</Label>
               <div className="pin-field">
                 <LockKeyhole />
-                <Input
-                  id="pin"
-                  name="pin"
-                  inputMode="numeric"
-                  pattern="[0-9]{6}"
-                  maxLength={6}
-                  autoComplete="current-password"
-                  placeholder="••••••"
-                  required
-                  autoFocus
-                />
+                <Input id="pin" name="pin" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="current-password" placeholder="••••••" required autoFocus />
               </div>
+            </>
+          ) : mode === "bootstrap" ? (
+            <>
+              <Label htmlFor="pin">PIN atual da WM Vendas</Label>
+              <Input id="pin" name="pin" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="off" placeholder="6 números" required autoFocus />
+              <Label htmlFor="email">Seu e-mail administrativo</Label>
+              <Input id="email" name="email" type="email" autoComplete="email" required placeholder="seu e-mail pessoal" />
+              <Label htmlFor="password">Crie uma senha forte</Label>
+              <Input id="password" name="password" type="password" minLength={12} autoComplete="new-password" required placeholder="Mínimo de 12 caracteres" />
             </>
           ) : (
             <>
               <Label htmlFor="email">E-mail</Label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                autoFocus
-                placeholder="voce@exemplo.com"
-              />
+              <Input id="email" name="email" type="email" autoComplete="email" required autoFocus placeholder="voce@exemplo.com" />
               <Label htmlFor="password">Senha</Label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                minLength={8}
-                autoComplete="current-password"
-                required
-                placeholder="Mínimo de 8 caracteres"
-              />
+              <Input id="password" name="password" type="password" minLength={8} autoComplete="current-password" required placeholder="Mínimo de 8 caracteres" />
             </>
           )}
           {error && (
