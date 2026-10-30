@@ -241,15 +241,46 @@ Deno.serve(async (req) => {
         return reply({token,account:{tenantId,storeName,slug,ownerName,role:"owner",storeUrl:`/loja?loja=${slug}`}},201);
       }catch(error){if(tenantId)await db.from("wm_tenants").delete().eq("id",tenantId);await db.auth.admin.deleteUser(userId);throw error}
     }
+    if (action === "platform_bootstrap_admin") {
+      const email=String(body.email||"").trim().toLowerCase(),password=String(body.password||""),pin=String(body.pin||"");
+      if(!/^\d{6}$/.test(pin)||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||password.length<12)return reply({error:"Informe PIN de 6 números, e-mail válido e senha com pelo menos 12 caracteres."},400);
+      const key=await sha((req.headers.get("cf-connecting-ip")||req.headers.get("x-forwarded-for")||"unknown")+"|platform-bootstrap|"+(req.headers.get("user-agent")||""));
+      const since=new Date(Date.now()-15*60_000).toISOString();
+      const {count:attempts}=await db.from("wm_login_attempts").select("*",{count:"exact",head:true}).eq("client_key",key).eq("succeeded",false).gte("attempted_at",since);
+      if((attempts||0)>=5)return reply({error:"Muitas tentativas. Aguarde 15 minutos."},429);
+      const {count:admins,error:countError}=await db.from("wm_platform_admins").select("*",{count:"exact",head:true});
+      if(countError)throw countError;if((admins||0)>0)return reply({error:"A configuração inicial já foi utilizada. Entre com seu e-mail e senha."},409);
+      const {data:valid,error:pinError}=await db.rpc("wm_verify_pin",{p_pin:pin});if(pinError)throw pinError;
+      await db.from("wm_login_attempts").insert({client_key:key,succeeded:!!valid});if(!valid)return reply({error:"PIN incorreto."},401);
+      let userId:string|null=null;
+      try {
+        const {data:created,error:createError}=await db.auth.admin.createUser({email,password,email_confirm:true});
+        if(createError||!created.user)throw createError||new Error("Falha ao criar conta administrativa.");userId=created.user.id;
+        const {error:adminError}=await db.from("wm_platform_admins").insert({user_id:userId,active:true,is_root:true});if(adminError)throw adminError;
+        const tenantId=await getWmTenantId(),token=randomToken();
+        const {error:sessionError}=await db.from("wm_sessions").insert({tenant_id:tenantId,user_id:userId,member_id:null,role:"owner",token_hash:await sha(token),expires_at:new Date(Date.now()+30*86400_000).toISOString()});if(sessionError)throw sessionError;
+        await audit({tenantId,userId,memberId:null,role:"owner"},"platform.bootstrap_completed","platform_admin",userId,{email,isRoot:true});
+        const {data:tenant,error:tenantError}=await db.from("wm_tenants").select("id,name,slug,owner_name,business_activity,business_segment,subscription_status,subscription_due_at,grace_until,monthly_price").eq("id",tenantId).single();if(tenantError)throw tenantError;
+        return reply({token,account:{tenantId:tenant.id,storeName:tenant.name,slug:tenant.slug,ownerName:tenant.owner_name||"",role:"owner",isPlatformAdmin:true,businessActivity:tenant.business_activity,businessSegment:tenant.business_segment,hasIndividualLogin:true,subscription:{status:tenant.subscription_status,dueAt:tenant.subscription_due_at,graceUntil:tenant.grace_until,monthlyPrice:Number(tenant.monthly_price||0)},storeUrl:`/loja?loja=${tenant.slug}`}},201);
+      } catch(error) {
+        if(userId){await db.from("wm_platform_admins").delete().eq("user_id",userId);await db.from("wm_sessions").delete().eq("user_id",userId);await db.auth.admin.deleteUser(userId);}throw error;
+      }
+    }
     if (action === "email_login") {
       const email=String(body.email||"").trim().toLowerCase(),password=String(body.password||"");
-      const loginKey=await sha((req.headers.get("cf-connecting-ip")||req.headers.get("x-forwarded-for")||"unknown")+"|email|"+(req.headers.get("user-agent")||""));
-      const loginSince=new Date(Date.now()-15*60_000).toISOString();
-      const {count:loginCount}=await db.from("wm_login_attempts").select("*",{count:"exact",head:true}).eq("client_key",loginKey).eq("succeeded",false).gte("attempted_at",loginSince);
-      if((loginCount||0)>=5)return reply({error:"Muitas tentativas. Aguarde 15 minutos."},429);
+      const key=await sha((req.headers.get("cf-connecting-ip")||req.headers.get("x-forwarded-for")||"unknown")+"|email|"+(req.headers.get("user-agent")||""));
+      const since=new Date(Date.now()-15*60_000).toISOString();
+      const {count:attempts}=await db.from("wm_login_attempts").select("*",{count:"exact",head:true}).eq("client_key",key).eq("succeeded",false).gte("attempted_at",since);
+      if((attempts||0)>=5)return reply({error:"Muitas tentativas. Aguarde 15 minutos."},429);
       const {data:auth,error:authError}=await authClient.auth.signInWithPassword({email,password});
-      await db.from("wm_login_attempts").insert({client_key:loginKey,succeeded:!authError&&!!auth.user});
+      await db.from("wm_login_attempts").insert({client_key:key,succeeded:!authError&&!!auth.user});
       if(authError||!auth.user)return reply({error:"E-mail ou senha incorretos."},401);
+      const {data:admin,error:adminError}=await db.from("wm_platform_admins").select("user_id").eq("user_id",auth.user.id).eq("active",true).maybeSingle();if(adminError)throw adminError;
+      if(admin){
+        const tenantId=await getWmTenantId();const {data:tenant,error:tenantError}=await db.from("wm_tenants").select("id,name,slug,owner_name,business_activity,business_segment,subscription_status,subscription_due_at,grace_until,monthly_price").eq("id",tenantId).single();if(tenantError)throw tenantError;
+        const token=randomToken();const {error:sessionError}=await db.from("wm_sessions").insert({tenant_id:tenantId,user_id:auth.user.id,member_id:null,role:"owner",token_hash:await sha(token),expires_at:new Date(Date.now()+30*86400_000).toISOString()});if(sessionError)throw sessionError;
+        return reply({token,account:{tenantId:tenant.id,storeName:tenant.name,slug:tenant.slug,ownerName:tenant.owner_name||"",role:"owner",isPlatformAdmin:true,businessActivity:tenant.business_activity,businessSegment:tenant.business_segment,hasIndividualLogin:true,subscription:{status:tenant.subscription_status,dueAt:tenant.subscription_due_at,graceUntil:tenant.grace_until,monthlyPrice:Number(tenant.monthly_price||0)},storeUrl:`/loja?loja=${tenant.slug}`}});
+      }
       const {data:member,error:memberError}=await db.from("wm_tenant_members").select("id,tenant_id,role,wm_tenants!inner(name,slug,active,subscription_status,trial_ends_at,grace_until,subscription_due_at)").eq("user_id",auth.user.id).eq("active",true).eq("wm_tenants.active",true).limit(1).maybeSingle();
       if(memberError)throw memberError;if(!member)return reply({error:"Sua conta não está vinculada a uma loja ativa."},403);
       if(!tenantCanOperate(member.wm_tenants))return reply({error:"Acesso temporariamente bloqueado. Entre em contato para regularizar sua mensalidade.",code:"SUBSCRIPTION_BLOCKED",whatsapp:"5591984855557",subscription:{status:member.wm_tenants?.subscription_status,dueAt:member.wm_tenants?.subscription_due_at}},402);
@@ -277,7 +308,8 @@ Deno.serve(async (req) => {
     const sessionRole=session.role||"owner";
     if(!canRun(sessionRole,action))return reply({error:"Seu perfil não tem permissão para realizar esta ação."},403);
     const wmTenantId=await getWmTenantId();
-    const platformAdmin=sessionTenantId===wmTenantId&&(sessionRole==="owner"||sessionRole==="admin");
+    let platformAdmin=false;
+    if(session.userId){const {data:adminRow,error:adminLookupError}=await db.from("wm_platform_admins").select("user_id").eq("user_id",session.userId).eq("active",true).maybeSingle();if(adminLookupError)throw adminLookupError;platformAdmin=!!adminRow;}
     const {data:billingTenant,error:billingError}=await db.from("wm_tenants").select("name,slug,owner_name,subscription_status,trial_ends_at,subscription_due_at,grace_until,monthly_price,business_activity,business_segment").eq("id",sessionTenantId).single();
     if(billingError)throw billingError;
     if(!platformAdmin&&!tenantCanOperate(billingTenant))return reply({error:"Acesso temporariamente bloqueado. Regularize sua mensalidade para continuar.",code:"SUBSCRIPTION_BLOCKED",whatsapp:"5591984855557",subscription:{status:billingTenant.subscription_status,dueAt:billingTenant.subscription_due_at}},402);
