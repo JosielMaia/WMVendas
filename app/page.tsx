@@ -454,6 +454,16 @@ export default function HomePage() {
   }
   async function load() {
     try {
+      const session = await api("session_check");
+      if (session?.account?.isPlatformAdmin) {
+        // A conta Master não deve carregar nem exibir os dados operacionais da WM Vendas.
+        setData({ ...empty, account: session.account });
+        setView("plataforma");
+        setAuthenticated(true);
+        setError("");
+        return;
+      }
+
       const j = await api("list");
       setData(j);
       setAuthenticated(true);
@@ -601,6 +611,7 @@ export default function HomePage() {
     localStorage.removeItem("wm_session");
     setAuthenticated(false);
     setData(empty);
+    setView("inicio");
   }
   const visibleProducts = useMemo(
     () =>
@@ -710,6 +721,49 @@ export default function HomePage() {
       : []),
   ];
   if (!authenticated) return <LoginScreen login={login} loading={saving} />;
+
+  // Painel Master isolado: sem menu, dashboard, clientes, vendas ou estoque da loja.
+  if (data.account?.isPlatformAdmin) {
+    return (
+      <main className="min-h-screen platform-admin-shell">
+        <header className="topbar">
+          <div className="brand">
+            <span className="brand-mark">WM</span>
+            <div>
+              <strong>WM Vendas</strong>
+              <small>Administração da plataforma</small>
+            </div>
+          </div>
+          <div className="top-actions">
+            <span className="platform-admin-label">ACESSO MASTER</span>
+            <button className="icon-btn" aria-label="Sair" onClick={logout}>
+              <LogOut />
+            </button>
+          </div>
+        </header>
+        <section className="content platform-admin-content">
+          {loading ? (
+            <div className="center"><Loader2 className="spin" /> Carregando administração…</div>
+          ) : error ? (
+            <div className="error">
+              <AlertCircle />
+              {error}
+              <Button onClick={load}>Tentar novamente</Button>
+            </div>
+          ) : (
+            <PlatformAdmin api={api} notify={notify} />
+          )}
+        </section>
+        {toast && (
+          <div className="toast">
+            <Check />
+            {toast}
+          </div>
+        )}
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen pb-24 lg:pb-8">
       <header className="topbar">
