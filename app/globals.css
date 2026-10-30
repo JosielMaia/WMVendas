@@ -210,3 +210,12 @@
 .finance-cash-summary{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 14px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--muted);font-size:12px;color:var(--muted-foreground)}
 .finance-cash-summary b{color:var(--foreground)}
 @media(max-width:600px){.finance-cash-filters input{min-height:42px}.finance-cash-summary{display:grid;grid-template-columns:1fr 1fr;gap:7px}.finance-cash-summary span:first-child{grid-column:1/-1}}
+
+/* Área Master independente da operação de qualquer loja */
+.platform-admin-shell{min-height:100vh;background:#fbf7f8}
+.platform-admin-content{width:100%;max-width:1760px;margin:0 auto;padding:34px clamp(16px,3vw,44px) 48px}
+.platform-admin-label{display:inline-flex;align-items:center;border:1px solid #e8d6df;background:#fbf3f6;color:#762746;border-radius:999px;padding:8px 12px;font-size:10px;font-weight:900;letter-spacing:.12em}
+.platform-admin-content .platform-grid{grid-template-columns:minmax(300px,.68fr) minmax(0,1.6fr)}
+.platform-admin-content .platform-create{position:static}
+@media(max-width:900px){.platform-admin-content .platform-grid{grid-template-columns:1fr}.platform-admin-content .platform-create{position:static}}
+@media(max-width:560px){.platform-admin-content{padding:22px 14px 36px}.platform-admin-content .platform-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.platform-admin-content .stat{padding:14px;border-radius:15px}.platform-admin-content .stat strong{font-size:20px}.platform-admin-label{display:none}.platform-admin-content .tenant-card>header{grid-template-columns:38px minmax(0,1fr)}.platform-admin-content .tenant-card>header em{grid-column:2;justify-self:start}}
