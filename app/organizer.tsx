@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Bell, CalendarClock, Check, ChevronDown, CircleDollarSign, ClipboardList, MessageCircle, Plus, RefreshCw, Wallet } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Bell, CalendarClock, Check, ChevronDown, CircleDollarSign, ClipboardList, MessageCircle, Mic, Plus, RefreshCw, Wallet } from "lucide-react";
 
 type RecordItem = {
   id: number;
@@ -36,6 +36,16 @@ const typeLabels: Record<string, string> = {
 };
 const dateLabel = (value?: string | null) => value ? new Date(value + (value.length === 10 ? "T12:00:00" : "")).toLocaleDateString("pt-BR") : "Sem data";
 
+type SpeechRecognitionLike = {
+  lang: string;
+  interimResults: boolean;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
 export function OrganizerView({ api, notify }: { api: (action: string, payload?: Record<string, unknown>) => Promise<any>; notify: (message: string) => void }) {
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [scope, setScope] = useState<"store" | "personal">("store");
@@ -46,6 +56,10 @@ export function OrganizerView({ api, notify }: { api: (action: string, payload?:
   const [payingId, setPayingId] = useState<number | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("pix");
+  const [description, setDescription] = useState("");
+  const [voiceText, setVoiceText] = useState("");
+  const [voiceListening, setVoiceListening] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -59,7 +73,37 @@ export function OrganizerView({ api, notify }: { api: (action: string, payload?:
     }
   }
 
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => { void refresh(); return () => recognitionRef.current?.stop(); }, []);
+
+  function startVoiceCapture() {
+    const speechWindow = window as typeof window & {
+      SpeechRecognition?: new () => SpeechRecognitionLike;
+      webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+    };
+    const SpeechRecognition = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      notify("O reconhecimento de voz não está disponível neste navegador. Você ainda pode digitar normalmente.");
+      return;
+    }
+    try {
+      recognitionRef.current?.stop();
+      const recognition = new SpeechRecognition();
+      recognition.lang = "pt-BR";
+      recognition.interimResults = false;
+      recognition.onresult = event => {
+        const transcript = Array.from(event.results).map(result => result[0]?.transcript || "").join(" ").trim();
+        if (transcript) setVoiceText(transcript);
+      };
+      recognition.onerror = () => notify("Não consegui entender o áudio. Tente novamente ou digite o registro.");
+      recognition.onend = () => setVoiceListening(false);
+      recognitionRef.current = recognition;
+      setVoiceListening(true);
+      recognition.start();
+    } catch {
+      setVoiceListening(false);
+      notify("Não foi possível iniciar o microfone. Confira a permissão do navegador.");
+    }
+  }
 
   const visible = useMemo(() => records
     .filter(item => item.financeScope === scope)
@@ -99,6 +143,8 @@ export function OrganizerView({ api, notify }: { api: (action: string, payload?:
         notes: String(form.get("notes") || ""),
       });
       formElement.reset();
+      setDescription("");
+      setVoiceText("");
       setShowForm(false);
       setFilter(["income","expense"].includes(entryType) ? "paid" : "open");
       notify("Registro salvo. Ele já aparece na sua organização.");
@@ -177,10 +223,20 @@ export function OrganizerView({ api, notify }: { api: (action: string, payload?:
             <option value="expense">Despesa / compra</option>
           </select>
         </label>
+        <div className="organizer-voice-capture">
+          <div><b>Prefere falar?</b><p>Conte o que aconteceu. O texto será apenas um rascunho para você conferir antes de salvar.</p></div>
+          <button type="button" onClick={voiceListening ? () => recognitionRef.current?.stop() : startVoiceCapture} disabled={saving}>
+            <Mic/> {voiceListening ? "Parar gravação" : "Falar registro"}
+          </button>
+          {voiceText && <div className="organizer-voice-result"><span>{voiceText}</span><div>
+            <button type="button" onClick={() => { setDescription(voiceText); notify("Texto colocado na descrição. Confira os dados antes de salvar."); }}>Usar na descrição</button>
+            <button type="button" className="quiet" onClick={() => setVoiceText("")}>Limpar</button>
+          </div></div>}
+        </div>
         <div className="organizer-form-grid">
           <label>Nome da pessoa (opcional)<input name="personName" placeholder="Ex.: Maria, fornecedor..." /></label>
           <label>WhatsApp (opcional)<input name="personPhone" inputMode="tel" placeholder="(91) 99999-9999" /></label>
-          <label className="wide">Descrição<input name="description" required minLength={2} placeholder="Ex.: comprei um perfume para Maria" /></label>
+          <label className="wide">Descrição<input name="description" value={description} onChange={event => setDescription(event.target.value)} required minLength={2} placeholder="Ex.: comprei um perfume para Maria" /></label>
           <label>Valor total<input name="amount" required inputMode="decimal" placeholder="0,00" /></label>
           <label>Categoria<input name="category" defaultValue={scope === "store" ? "Outros" : "Casa"} /></label>
           <label>Forma de pagamento/recebimento<select name="paymentMethod" defaultValue="pix"><option value="pix">PIX</option><option value="dinheiro">Dinheiro</option><option value="transferencia">Transferência</option><option value="cartao">Cartão</option><option value="outro">Outro</option></select></label>
