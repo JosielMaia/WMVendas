@@ -20,6 +20,7 @@ type RecordItem = {
   notes: string | null;
   reminderAt: string | null;
   paidAt: string | null;
+  payments: Array<{ id:number; amount:number; paymentMethod:string; paidAt:string; notes:string | null }>;
 };
 
 const money = (value: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
@@ -205,8 +206,9 @@ export function OrganizerView({ api, notify }: { api: (action: string, payload?:
             <div className="organizer-record-main">
               <div className="organizer-record-title"><b>{item.description}</b><span className={status === "Em atraso" ? "late" : status === "Quitado" ? "done" : "pending"}>{status}</span></div>
               <small>{typeLabels[item.entryType] || "Registro"}{item.personName ? ` · ${item.personName}` : ""}</small>
-              <p>{item.category} · Registrado em {dateLabel(item.occurredAt)}{item.dueDate ? ` · Vencimento ${dateLabel(item.dueDate)}` : ""}</p>
+              <p>{item.category} · Registrado em {dateLabel(item.occurredAt)}{item.dueDate ? ` · Vencimento ${dateLabel(item.dueDate)}` : ""}{item.reminderAt ? ` · Lembrete ${new Date(item.reminderAt).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"short"})}` : ""}</p>
               {item.notes && <p className="organizer-notes">{item.notes}</p>}
+              {item.payments?.length > 0 && <div className="organizer-payment-history"><b>Histórico de pagamentos</b>{item.payments.map(payment => <span key={payment.id}>{money(payment.amount)} · {payment.paymentMethod} · {new Date(payment.paidAt).toLocaleDateString("pt-BR")}</span>)}</div>}
               {balance > 0 && <div className="organizer-record-actions">
                 <button onClick={() => { setPayingId(payingId === item.id ? null : item.id); setPaymentAmount(balance.toFixed(2).replace(".", ",")); }}><Check/> Registrar pagamento/recebimento</button>
                 {link && <a href={link} target="_blank" rel="noreferrer"><MessageCircle/> Lembrar no WhatsApp</a>}
