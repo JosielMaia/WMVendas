@@ -133,7 +133,8 @@ export function OrganizerView({ api, notify }: { api: (action: string, payload?:
   }
 
   function reminderLink(item: RecordItem) {
-    const phone = (item.personPhone || "").replace(/\\D/g, "");
+    if (!["sale_other_person", "loan_given", "receivable"].includes(item.entryType)) return "";
+    const phone = (item.personPhone || "").replace(/\D/g, "");
     if (!phone) return "";
     const balance = Math.max(0, item.amount - item.paidAmount);
     const message = `Olá, ${item.personName || ""}! Passando para lembrar sobre ${item.description}, no valor pendente de ${money(balance)}. Vencimento: ${dateLabel(item.dueDate)}. Obrigada!`;
