@@ -77,6 +77,7 @@ export function OrganizerView({ api, notify }: { api: (action: string, payload?:
     const form = new FormData(formElement);
     const amountRaw = String(form.get("amount") || "").trim();
     const amount = Number(amountRaw.includes(",") ? amountRaw.replace(/\\./g, "").replace(",", ".") : amountRaw);
+    const entryType = String(form.get("entryType") || "expense");
     if (!Number.isFinite(amount) || amount <= 0) {
       notify("Informe um valor maior que zero.");
       return;
@@ -85,11 +86,12 @@ export function OrganizerView({ api, notify }: { api: (action: string, payload?:
     try {
       await api("create_personal_record", {
         financeScope: scope,
-        entryType: String(form.get("entryType") || "expense"),
+        entryType,
         personName: String(form.get("personName") || ""),
         personPhone: String(form.get("personPhone") || ""),
         description: String(form.get("description") || ""),
         category: String(form.get("category") || "Outros"),
+        paymentMethod: String(form.get("paymentMethod") || "outro"),
         amount,
         occurredAt: String(form.get("occurredAt") || today()),
         dueDate: String(form.get("dueDate") || ""),
@@ -98,6 +100,7 @@ export function OrganizerView({ api, notify }: { api: (action: string, payload?:
       });
       formElement.reset();
       setShowForm(false);
+      setFilter(["income","expense"].includes(entryType) ? "paid" : "open");
       notify("Registro salvo. Ele já aparece na sua organização.");
       await refresh();
     } catch (error) {
@@ -179,6 +182,7 @@ export function OrganizerView({ api, notify }: { api: (action: string, payload?:
           <label className="wide">Descrição<input name="description" required minLength={2} placeholder="Ex.: comprei um perfume para Maria" /></label>
           <label>Valor total<input name="amount" required inputMode="decimal" placeholder="0,00" /></label>
           <label>Categoria<input name="category" defaultValue={scope === "store" ? "Outros" : "Casa"} /></label>
+          <label>Forma de pagamento/recebimento<select name="paymentMethod" defaultValue="pix"><option value="pix">PIX</option><option value="dinheiro">Dinheiro</option><option value="transferencia">Transferência</option><option value="cartao">Cartão</option><option value="outro">Outro</option></select></label>
           <label>Data do registro<input name="occurredAt" type="date" defaultValue={today()} /></label>
           <label>Data de vencimento (se houver)<input name="dueDate" type="date" /></label>
           <label className="wide">Lembrete (opcional)<input name="reminderAt" type="datetime-local" /></label>
