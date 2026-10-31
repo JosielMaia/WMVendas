@@ -66,6 +66,7 @@ type Product = {
   salePrice: number;
   stock: number;
   photoUrl?: string | null;
+  photoUrl2?: string | null;
 };
 type Customer = {
   id: number;
@@ -663,6 +664,7 @@ export default function HomePage() {
         salePrice: Number(found.salePrice || 0),
         stock: Number(found.stock || 0),
         photoUrl: found.imageUrl || null,
+        photoUrl2: found.imageUrl2 || null,
       };
       setData((current) => ({
         ...current,
@@ -3371,12 +3373,17 @@ function ProductDialog({
     [brand, setBrand] = useState("Rommanel"),
     [photo, setPhoto] = useState<File | null>(null),
     [preview, setPreview] = useState(""),
+    [photo2, setPhoto2] = useState<File | null>(null),
+    [preview2, setPreview2] = useState(""),
     [catalogImage, setCatalogImage] = useState(""),
     [removePhoto, setRemovePhoto] = useState(false),
+    [removePhoto2, setRemovePhoto2] = useState(false),
     [looking, setLooking] = useState(false),
     [lookupNote, setLookupNote] = useState("");
   const cameraInput = useRef<HTMLInputElement>(null),
-    galleryInput = useRef<HTMLInputElement>(null);
+    galleryInput = useRef<HTMLInputElement>(null),
+    cameraInput2 = useRef<HTMLInputElement>(null),
+    galleryInput2 = useRef<HTMLInputElement>(null);
   async function findBarcode(value = code) {
     const clean = value.trim();
     if (clean.length < 4) return;
@@ -3424,8 +3431,11 @@ function ProductDialog({
       if (scanned) sessionStorage.removeItem("wm-scanned-code");
       setPhoto(null);
       setPreview(product?.photoUrl || "");
+      setPhoto2(null);
+      setPreview2(product?.photoUrl2 || "");
       setCatalogImage("");
       setRemovePhoto(false);
+      setRemovePhoto2(false);
       setLookupNote("");
       if (scanned) void findBarcode(scanned);
     }
@@ -3448,6 +3458,22 @@ function ProductDialog({
     setPhoto(null);
     setRemovePhoto(Boolean(product?.photoUrl));
   }
+  function chooseSecond(file?: File) {
+    if (!file) return;
+    setPhoto2(file);
+    setRemovePhoto2(false);
+    const url = URL.createObjectURL(file);
+    setPreview2((old) => {
+      if (old.startsWith("blob:")) URL.revokeObjectURL(old);
+      return url;
+    });
+  }
+  function removeSecond() {
+    if (preview2.startsWith("blob:")) URL.revokeObjectURL(preview2);
+    setPreview2("");
+    setPhoto2(null);
+    setRemovePhoto2(Boolean(product?.photoUrl2));
+  }
   async function send(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const values: Record<string, unknown> = Object.fromEntries(
@@ -3455,9 +3481,11 @@ function ProductDialog({
     );
     values.catalogImageUrl = catalogImage;
     if (photo) values.photo = await prepareProductPhoto(photo);
+    if (photo2) values.photo2 = await prepareProductPhoto(photo2);
     if (product) {
       values.id = product.id;
       values.removePhoto = removePhoto;
+      values.removePhoto2 = removePhoto2;
     }
     await save(product ? "update_product" : "create_product", values);
   }
@@ -3526,6 +3554,34 @@ function ProductDialog({
                 accept="image/jpeg,image/png,image/webp"
                 onChange={(e) => choose(e.target.files?.[0])}
               />
+            </div>
+          </div>
+          <div className="field full">
+            <Label>Segunda foto (opcional)</Label>
+            <div className="photo-picker">
+              {preview2 ? (
+                <div className="photo-preview">
+                  <img src={preview2} alt="Prévia da segunda foto" />
+                  <button type="button" aria-label="Remover segunda foto" onClick={removeSecond}>
+                    <X />
+                  </button>
+                </div>
+              ) : (
+                <div className="photo-placeholder">
+                  <ImagePlus />
+                  <span>Detalhe, verso ou outra vista do produto</span>
+                </div>
+              )}
+              <div className="photo-actions">
+                <Button type="button" variant="outline" onClick={() => cameraInput2.current?.click()}>
+                  <Camera /> Tirar foto
+                </Button>
+                <Button type="button" variant="outline" onClick={() => galleryInput2.current?.click()}>
+                  <ImagePlus /> Galeria
+                </Button>
+              </div>
+              <input ref={cameraInput2} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(e) => chooseSecond(e.target.files?.[0])} />
+              <input ref={galleryInput2} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => chooseSecond(e.target.files?.[0])} />
             </div>
           </div>
           <div className="field full">
