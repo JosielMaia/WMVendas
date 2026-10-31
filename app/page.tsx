@@ -56,6 +56,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StoreAdmin } from "./store-admin";
 import { TeamView } from "./team";
 import { PlatformAdmin } from "./platform-admin";
+import { OrganizerView } from "./organizer";
 
 type Product = {
   id: number;
@@ -714,6 +715,7 @@ export default function HomePage() {
       ? ([
           ["fornecedores", ReceiptText, "Boletos"],
           ["financeiro", Wallet, "Financeiro"],
+          ["organizar", CalendarClock, "Meu Dia"],
           ["loja", Store, "Loja"],
           ["equipe", UserPlus, "Equipe"],
         ] as [string, any, string][])
@@ -931,6 +933,7 @@ export default function HomePage() {
                   }}
                 />
               )}
+              {view === "organizar" && <OrganizerView api={api} notify={notify} />}
               {view === "loja" && <StoreAdmin api={api} notify={notify} />}
               {view === "equipe" && canManage && (
                 <TeamView
