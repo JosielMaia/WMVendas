@@ -320,3 +320,9 @@
  .organizer-payment{grid-template-columns:1fr}
  .organizer-payment button{width:100%}
 }
+
+
+.detail-gallery{display:grid;gap:10px;max-height:min(58vh,720px);overflow-y:auto;padding-right:2px}
+.detail-gallery .detail-photo{height:clamp(210px,38vh,340px);min-height:190px}
+.detail-photo-secondary{border:1px solid #eadbe1;border-radius:16px;background:#fff}
+@media(max-width:600px){.detail-gallery{max-height:54vh}.detail-gallery .detail-photo{height:220px;min-height:180px}}
