@@ -76,7 +76,7 @@ export function OrganizerView({ api, notify }: { api: (action: string, payload?:
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const amountRaw = String(form.get("amount") || "").trim();
-    const amount = Number(amountRaw.includes(",") ? amountRaw.replace(/\\./g, "").replace(",", ".") : amountRaw);
+    const amount = Number(amountRaw.includes(",") ? amountRaw.replace(/\./g, "").replace(",", ".") : amountRaw);
     const entryType = String(form.get("entryType") || "expense");
     if (!Number.isFinite(amount) || amount <= 0) {
       notify("Informe um valor maior que zero.");
@@ -112,7 +112,7 @@ export function OrganizerView({ api, notify }: { api: (action: string, payload?:
 
   async function registerPayment(item: RecordItem) {
     const raw = paymentAmount.trim();
-    const amount = Number(raw.includes(",") ? raw.replace(/\\./g, "").replace(",", ".") : raw);
+    const amount = Number(raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : raw);
     const balance = Math.max(0, item.amount - item.paidAmount);
     if (!Number.isFinite(amount) || amount <= 0 || amount > balance + 0.001) {
       notify("Confira o valor. Ele não pode ser maior que o saldo em aberto.");
