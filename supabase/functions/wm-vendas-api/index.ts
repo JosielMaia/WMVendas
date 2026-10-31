@@ -790,8 +790,12 @@ Deno.serve(async (req) => {
       if(sessionRole==="seller") query.eq("finance_scope","store");
       const {data,error}=await query;
       if(error)throw error;
+      const {data:paymentRows,error:paymentError}=await db.from("wm_personal_record_payments").select("id,record_id,amount,payment_method,paid_at,notes").eq("tenant_id",sessionTenantId).order("paid_at",{ascending:false}).limit(1000);
+      if(paymentError)throw paymentError;
+      const paymentsByRecord=new Map<number,any[]>();
+      for(const payment of paymentRows||[]){const key=Number(payment.record_id);if(!paymentsByRecord.has(key))paymentsByRecord.set(key,[]);paymentsByRecord.get(key)!.push({id:Number(payment.id),amount:Number(payment.amount),paymentMethod:payment.payment_method,paidAt:payment.paid_at,notes:payment.notes});}
       const today=new Date().toISOString().slice(0,10);
-      return reply({records:(data||[]).map((r:any)=>({id:Number(r.id),financeScope:r.finance_scope,entryType:r.entry_type,personName:r.person_name,personPhone:r.person_phone,description:r.description,category:r.category,amount:Number(r.amount),paidAmount:Number(r.paid_amount||0),occurredAt:r.occurred_at,dueDate:r.due_date,status:r.status==="open"&&r.due_date&&r.due_date<today?"overdue":r.status,paymentMethod:r.payment_method,notes:r.notes,reminderAt:r.reminder_at,paidAt:r.paid_at}))});
+      return reply({records:(data||[]).map((r:any)=>({id:Number(r.id),financeScope:r.finance_scope,entryType:r.entry_type,personName:r.person_name,personPhone:r.person_phone,description:r.description,category:r.category,amount:Number(r.amount),paidAmount:Number(r.paid_amount||0),occurredAt:r.occurred_at,dueDate:r.due_date,status:r.status==="open"&&r.due_date&&r.due_date<today?"overdue":r.status,paymentMethod:r.payment_method,notes:r.notes,reminderAt:r.reminder_at,paidAt:r.paid_at,payments:paymentsByRecord.get(Number(r.id))||[]}))});
     }
     if (action === "create_personal_record") {
       const financeScope=String(body.financeScope||"store"), entryType=String(body.entryType||"expense");
@@ -821,12 +825,14 @@ Deno.serve(async (req) => {
       if(current.status==="canceled"||current.status==="paid")return reply({error:"Este registro já está encerrado."},409);
       const previousPaid=Number(current.paid_amount||0), total=Number(current.amount), balance=Math.max(0,total-previousPaid);
       if(amount>balance+0.001)return reply({error:"O valor informado é maior que o saldo em aberto."},400);
-      const nextPaid=Number((previousPaid+amount).toFixed(2)), nextStatus=nextPaid>=total-0.001?"paid":"partial";
-      const {data:updated,error:updateError}=await db.from("wm_personal_records").update({paid_amount:nextPaid,status:nextStatus,payment_method:String(body.paymentMethod||"outro").slice(0,30),paid_at:nextStatus==="paid"?new Date().toISOString():null,updated_at:new Date().toISOString()}).eq("tenant_id",sessionTenantId).eq("id",id).eq("paid_amount",previousPaid).select("id,paid_amount,status").maybeSingle();
-      if(updateError)throw updateError;
-      if(!updated)return reply({error:"Este registro foi atualizado em outro acesso. Atualize a tela e tente novamente."},409);
-      await audit(session,"personal_record.payment_recorded","personal_record",String(id),{amount,paymentMethod:String(body.paymentMethod||"outro"),status:nextStatus});
-      return reply({message:nextStatus==="paid"?"Registro quitado.":"Pagamento parcial registrado.",paidAmount:nextPaid,status:nextStatus,remainingAmount:Number((total-nextPaid).toFixed(2))});
+      const paymentMethod=String(body.paymentMethod||"outro").slice(0,30);
+      const {data:payment,error:paymentError}=await db.rpc("wm_record_personal_record_payment",{
+        p_tenant_id:sessionTenantId,p_record_id:id,p_amount:Number(amount.toFixed(2)),
+        p_payment_method:paymentMethod,p_paid_at:new Date().toISOString(),p_notes:String(body.notes||"").slice(0,500)
+      });
+      if(paymentError)return reply({error:paymentError.message},400);
+      await audit(session,"personal_record.payment_recorded","personal_record",String(id),{paymentId:payment?.paymentId,amount,paymentMethod,status:payment?.status});
+      return reply({message:payment?.status==="paid"?"Registro quitado.":"Pagamento parcial registrado.",...payment});
     }
     if (action === "create_product") {
       const barcode=String(body.barcode||"").trim(), name=String(body.name||"").trim();
