@@ -326,3 +326,8 @@
 .detail-gallery .detail-photo{height:clamp(210px,38vh,340px);min-height:190px}
 .detail-photo-secondary{border:1px solid #eadbe1;border-radius:16px;background:#fff}
 @media(max-width:600px){.detail-gallery{max-height:54vh}.detail-gallery .detail-photo{height:220px;min-height:180px}}
+
+
+.organizer-payment-history{display:grid;gap:3px;margin-top:8px;padding:8px 10px;border-left:3px solid #d7bd83;border-radius:0 8px 8px 0;background:#fffaf0}
+.organizer-payment-history b{color:#785a24;font-size:10px}
+.organizer-payment-history span{color:#806976;font-size:10px}
