@@ -88,7 +88,7 @@ function loanLateCharges(loan:any, installment:any, normalPaidTotal:number, inte
   return {daysLate,latePenalty:penalty,lateInterest:interest,lateCharges:Number((penalty+interest).toFixed(2)),contractualInterest,interestPaid:interestOnlyPaidTotal,remainingInterest:interestRemaining,principalRemaining,principalPaid:Math.min(normalPaidTotal,principalAmount),totalDue:Number((baseRemaining+penalty+interest).toFixed(2))};
 }
 
-const sellerActions=new Set(["session_check","list","barcode_lookup","logout","create_customer","create_sale","create_express_sale","create_product","update_product","mark_paid","customer_history","update_store_order_status","create_loan","update_loan","cancel_loan","record_loan_payment","record_loan_interest_payment"]);
+const sellerActions=new Set(["session_check","list","barcode_lookup","logout","create_customer","create_sale","create_express_sale","create_product","update_product","mark_paid","customer_history","update_store_order_status","create_loan","update_loan","cancel_loan","record_loan_payment","record_loan_interest_payment","personal_records_list","create_personal_record","record_personal_payment"]);
 const viewerActions=new Set(["session_check","list","barcode_lookup","logout"]);
 function canRun(role:string,action:string){return role==="owner"||role==="admin"||(role==="seller"&&sellerActions.has(action))||(role==="viewer"&&viewerActions.has(action))}
 async function audit(session:{tenantId:string;userId:string|null;memberId:string|null;role:string|null},eventType:string,entityType:string,entityId:string|null,metadata:Record<string,unknown>={}){
@@ -142,21 +142,22 @@ Deno.serve(async (req) => {
       if (expireError) throw expireError;
       const [{ data: settings, error: settingsError }, { data: products, error: productsError }, {data:tenantProfile,error:profileError}] = await Promise.all([
         db.from("wm_store_settings").select("store_name,whatsapp,store_enabled,logo_url,logo_path,primary_color,accent_color,slogan").eq("tenant_id", tenantId).maybeSingle(),
-        db.from("wm_products").select("id,name,brand,sale_price,stock,photo_path,catalog_image_url").eq("tenant_id", tenantId).gt("sale_price", 0).gt("stock", 0).order("name"),
+        db.from("wm_products").select("id,name,brand,sale_price,stock,photo_path,photo_path_secondary,catalog_image_url").eq("tenant_id", tenantId).gt("sale_price", 0).gt("stock", 0).order("name"),
         db.from("wm_tenants").select("business_activity,business_segment").eq("id",tenantId).single()
       ]);
       if (settingsError) throw settingsError;
       if (productsError) throw productsError;
       if (profileError) throw profileError;
       if (!settings) throw new Error("Configurações da loja WM Vendas não encontradas.");
-      const catalog = await Promise.all((products || []).map(async (p: any) => ({
-        id: p.id,
-        name: p.name,
-        brand: p.brand,
-        price: Number(p.sale_price),
-        stock: p.stock,
-        photoUrl: p.photo_path ? (await db.storage.from("wm-product-images").createSignedUrl(p.photo_path, 3600)).data?.signedUrl || null : p.catalog_image_url || null
-      })));
+      const catalog = await Promise.all((products || []).map(async (p: any) => {
+        const [primary, secondary] = await Promise.all([
+          p.photo_path ? db.storage.from("wm-product-images").createSignedUrl(p.photo_path, 3600) : Promise.resolve({ data: null }),
+          p.photo_path_secondary ? db.storage.from("wm-product-images").createSignedUrl(p.photo_path_secondary, 3600) : Promise.resolve({ data: null })
+        ]);
+        return { id:p.id, name:p.name, brand:p.brand, price:Number(p.sale_price), stock:p.stock,
+          photoUrl:primary.data?.signedUrl || p.catalog_image_url || null,
+          photoUrl2:secondary.data?.signedUrl || null };
+      }));
       const logoUrl=settings.logo_path?(await db.storage.from("wm-store-assets").createSignedUrl(settings.logo_path,3600)).data?.signedUrl||null:settings.logo_url||null;
       return reply({ store: { name: settings.store_name, whatsapp: settings.whatsapp, enabled: settings.store_enabled,logoUrl,primaryColor:settings.primary_color,accentColor:settings.accent_color,slogan:settings.slogan,activity:tenantProfile.business_activity,segment:tenantProfile.business_segment }, products: catalog });
     }
@@ -399,12 +400,13 @@ Deno.serve(async (req) => {
       const barcode=String(body.barcode||"").trim();
       if(!/^[A-Za-z0-9._-]{4,40}$/.test(barcode))return reply({error:"Código de barras inválido."},400);
       const tenantId=sessionTenantId;
-      const {data:owned,error:ownedError}=await db.from("wm_products").select("id,name,brand,cost_price,sale_price,stock,photo_path,catalog_image_url").eq("tenant_id",tenantId).eq("barcode",barcode).maybeSingle();
+      const {data:owned,error:ownedError}=await db.from("wm_products").select("id,name,brand,cost_price,sale_price,stock,photo_path,photo_path_secondary,catalog_image_url").eq("tenant_id",tenantId).eq("barcode",barcode).maybeSingle();
       if(ownedError)throw ownedError;
       if(owned){
-        let imageUrl=null;
+        let imageUrl=null, imageUrl2=null;
         if(owned.photo_path)imageUrl=(await db.storage.from("wm-product-images").createSignedUrl(owned.photo_path,3600)).data?.signedUrl||null;
-        return reply({found:true,registered:true,product:{id:owned.id,barcode,name:owned.name,brand:owned.brand,costPrice:Number(owned.cost_price),salePrice:Number(owned.sale_price),stock:Number(owned.stock),category:"Outros",imageUrl:imageUrl||owned.catalog_image_url||null,source:"Estoque da loja"}});
+        if(owned.photo_path_secondary)imageUrl2=(await db.storage.from("wm-product-images").createSignedUrl(owned.photo_path_secondary,3600)).data?.signedUrl||null;
+        return reply({found:true,registered:true,product:{id:owned.id,barcode,name:owned.name,brand:owned.brand,costPrice:Number(owned.cost_price),salePrice:Number(owned.sale_price),stock:Number(owned.stock),category:"Outros",imageUrl:imageUrl||owned.catalog_image_url||null,imageUrl2,source:"Estoque da loja"}});
       }
       const {data:catalog,error:catalogError}=await db.from("wm_product_catalog").select("barcode,name,brand,category,image_url,source").eq("barcode",barcode).maybeSingle();
       if(catalogError)throw catalogError;
@@ -768,7 +770,7 @@ Deno.serve(async (req) => {
       const statsFor=(id:number)=>{if(!customerStats.has(id))customerStats.set(id,{totalPurchased:0,purchaseCount:0,pendingBalance:0,overdueCount:0,latePayments:0});return customerStats.get(id)!};
       for(const sale of sales){if(sale.customer_id){const stat=statsFor(sale.customer_id);stat.totalPurchased+=Number(sale.total);stat.purchaseCount+=1}}
       for(const item of ar.data||[]){if(!item.customer_id)continue;const stat=statsFor(item.customer_id);const paid=Number(paidByReceivable.get(Number(item.id))||0);if(item.status==="pending"){const balance=Math.max(0,Number(item.amount)-paid);stat.pendingBalance+=balance;if(balance>0&&item.due_date<today)stat.overdueCount+=1}else if(item.status==="paid"&&item.paid_at&&item.paid_at.slice(0,10)>item.due_date){stat.latePayments+=1}}
-      const photoPaths=products.map((p:any)=>p.photo_path).filter(Boolean);
+      const photoPaths=products.flatMap((p:any)=>[p.photo_path,p.photo_path_secondary]).filter(Boolean);
       const signedByPath=new Map<string,string>();
       if(photoPaths.length){
         const {data:signedPhotos,error:signedError}=await db.storage.from("wm-product-images").createSignedUrls(photoPaths,3600);
@@ -776,12 +778,55 @@ Deno.serve(async (req) => {
       }
       return reply({
         account:{tenantId:sessionTenantId,storeName:tr.data?.name||"WM Vendas",slug:tr.data?.slug||"wm-vendas",ownerName:tr.data?.owner_name||"",role:session.role||"owner",hasIndividualLogin:!!session.userId,isPlatformAdmin:platformAdmin,subscription:{status:tr.data?.subscription_status,dueAt:tr.data?.subscription_due_at,graceUntil:tr.data?.grace_until,monthlyPrice:Number(tr.data?.monthly_price||0)},storeUrl:`/loja?loja=${tr.data?.slug||"wm-vendas"}`},
-        products:products.map((p:any)=>({id:p.id,barcode:p.barcode,name:p.name,brand:p.brand,costPrice:Number(p.cost_price),salePrice:Number(p.sale_price),stock:p.stock,photoUrl:p.photo_path?signedByPath.get(p.photo_path)||null:p.catalog_image_url||null})),
+        products:products.map((p:any)=>({id:p.id,barcode:p.barcode,name:p.name,brand:p.brand,costPrice:Number(p.cost_price),salePrice:Number(p.sale_price),stock:p.stock,photoUrl:p.photo_path?signedByPath.get(p.photo_path)||null:p.catalog_image_url||null,photoUrl2:p.photo_path_secondary?signedByPath.get(p.photo_path_secondary)||null:null})),
         customers:(cr.data||[]).map((c:any)=>{const stat=statsFor(c.id);const loyaltyLevel=stat.totalPurchased>=3000?"Diamante":stat.totalPurchased>=1500?"Ouro":stat.totalPurchased>=500?"Prata":stat.totalPurchased>0?"Bronze":"Novo";const paymentStatus=stat.purchaseCount===0?"Novo":stat.overdueCount>0?"Em atraso":stat.latePayments>0?"Atenção":"Em dia";return {id:c.id,name:c.name,phone:c.phone,...stat,loyaltyLevel,paymentStatus}}),
         charges,
         supplierBills,
         dashboard:{investment,expectedRevenue,expectedProfit:expectedRevenue-investment,salesTotal:sales.reduce((s:number,x:any)=>s+Number(x.total),0),received:payments.reduce((s:number,x:any)=>s+Number(x.amount||0),0),pending,overdueCount:charges.filter((c:any)=>c.status==="overdue").length,supplierPendingTotal:pendingSupplierBills.reduce((s:number,b:any)=>s+b.amount,0),supplierDueSoonCount:pendingSupplierBills.filter((b:any)=>["today","dueSoon"].includes(b.status)).length,supplierOverdueCount:pendingSupplierBills.filter((b:any)=>b.status==="overdue").length}
       });
+    }
+    if (action === "personal_records_list") {
+      const query = db.from("wm_personal_records").select("id,finance_scope,entry_type,person_name,person_phone,description,category,amount,paid_amount,occurred_at,due_date,status,payment_method,notes,reminder_at,paid_at,created_at").eq("tenant_id",sessionTenantId).neq("status","canceled").order("due_date",{ascending:true,nullsFirst:false}).order("created_at",{ascending:false}).limit(300);
+      if(sessionRole==="seller") query.eq("finance_scope","store");
+      const {data,error}=await query;
+      if(error)throw error;
+      const today=new Date().toISOString().slice(0,10);
+      return reply({records:(data||[]).map((r:any)=>({id:Number(r.id),financeScope:r.finance_scope,entryType:r.entry_type,personName:r.person_name,personPhone:r.person_phone,description:r.description,category:r.category,amount:Number(r.amount),paidAmount:Number(r.paid_amount||0),occurredAt:r.occurred_at,dueDate:r.due_date,status:r.status==="open"&&r.due_date&&r.due_date<today?"overdue":r.status,paymentMethod:r.payment_method,notes:r.notes,reminderAt:r.reminder_at,paidAt:r.paid_at}))});
+    }
+    if (action === "create_personal_record") {
+      const financeScope=String(body.financeScope||"store"), entryType=String(body.entryType||"expense");
+      if(!["store","personal"].includes(financeScope))return reply({error:"Área financeira inválida."},400);
+      if(financeScope==="personal"&&!["owner","admin"].includes(sessionRole))return reply({error:"Somente a administração pode acessar os registros pessoais."},403);
+      if(!["sale_other_person","loan_given","loan_received","income","expense","payable","receivable"].includes(entryType))return reply({error:"Tipo de registro inválido."},400);
+      const description=String(body.description||"").trim(), rawAmount=String(body.amount??"").trim();
+      const normalizedAmount=rawAmount.includes(",")?rawAmount.replace(/\\./g,"").replace(",","."):rawAmount;
+      const amount=Number(normalizedAmount), occurredAt=String(body.occurredAt||new Date().toISOString().slice(0,10)), dueDate=String(body.dueDate||"").trim()||null;
+      if(description.length<2||description.length>240||!Number.isFinite(amount)||amount<=0)return reply({error:"Informe uma descrição e um valor válido."},400);
+      if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(occurredAt)||(dueDate&&!/^\\d{4}-\\d{2}-\\d{2}$/.test(dueDate)))return reply({error:"Confira as datas informadas."},400);
+      let reminderAt:string|null=null;
+      const reminderRaw=String(body.reminderAt||"").trim();
+      if(reminderRaw){const parsed=new Date(reminderRaw);if(Number.isNaN(parsed.getTime()))return reply({error:"Data do lembrete inválida."},400);reminderAt=parsed.toISOString();}
+      const {data,error}=await db.from("wm_personal_records").insert({tenant_id:sessionTenantId,finance_scope:financeScope,entry_type:entryType,person_name:String(body.personName||"").trim().slice(0,120)||null,person_phone:String(body.personPhone||"").replace(/[^0-9+]/g,"").slice(0,24)||null,description,category:String(body.category||"Outros").trim().slice(0,60)||"Outros",amount:Number(amount.toFixed(2)),occurred_at:occurredAt,due_date:dueDate,reminder_at:reminderAt,notes:String(body.notes||"").trim().slice(0,1000)||null}).select("id").single();
+      if(error)throw error;
+      await audit(session,"personal_record.created","personal_record",String(data.id),{financeScope,entryType,amount});
+      return reply({message:"Registro salvo com sucesso.",id:data.id},201);
+    }
+    if (action === "record_personal_payment") {
+      const id=Number(body.id), rawAmount=String(body.amount??"").trim(), normalizedAmount=rawAmount.includes(",")?rawAmount.replace(/\\./g,"").replace(",","."):rawAmount, amount=Number(normalizedAmount);
+      if(!Number.isInteger(id)||id<1||!Number.isFinite(amount)||amount<=0)return reply({error:"Informe um registro e um valor válidos."},400);
+      const {data:current,error:findError}=await db.from("wm_personal_records").select("id,finance_scope,amount,paid_amount,status").eq("tenant_id",sessionTenantId).eq("id",id).maybeSingle();
+      if(findError)throw findError;
+      if(!current)return reply({error:"Registro não encontrado."},404);
+      if(current.finance_scope==="personal"&&!["owner","admin"].includes(sessionRole))return reply({error:"Sem permissão para este registro."},403);
+      if(current.status==="canceled"||current.status==="paid")return reply({error:"Este registro já está encerrado."},409);
+      const previousPaid=Number(current.paid_amount||0), total=Number(current.amount), balance=Math.max(0,total-previousPaid);
+      if(amount>balance+0.001)return reply({error:"O valor informado é maior que o saldo em aberto."},400);
+      const nextPaid=Number((previousPaid+amount).toFixed(2)), nextStatus=nextPaid>=total-0.001?"paid":"partial";
+      const {data:updated,error:updateError}=await db.from("wm_personal_records").update({paid_amount:nextPaid,status:nextStatus,payment_method:String(body.paymentMethod||"outro").slice(0,30),paid_at:nextStatus==="paid"?new Date().toISOString():null,updated_at:new Date().toISOString()}).eq("tenant_id",sessionTenantId).eq("id",id).eq("paid_amount",previousPaid).select("id,paid_amount,status").maybeSingle();
+      if(updateError)throw updateError;
+      if(!updated)return reply({error:"Este registro foi atualizado em outro acesso. Atualize a tela e tente novamente."},409);
+      await audit(session,"personal_record.payment_recorded","personal_record",String(id),{amount,paymentMethod:String(body.paymentMethod||"outro"),status:nextStatus});
+      return reply({message:nextStatus==="paid"?"Registro quitado.":"Pagamento parcial registrado.",paidAmount:nextPaid,status:nextStatus,remainingAmount:Number((total-nextPaid).toFixed(2))});
     }
     if (action === "create_product") {
       const barcode=String(body.barcode||"").trim(), name=String(body.name||"").trim();
