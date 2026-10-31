@@ -560,7 +560,7 @@ Deno.serve(async (req) => {
       const startDate=String(body.startDate||"");
       const firstDueDate=String(body.firstDueDate||"");
       const frequency=String(body.frequency||"unico");
-      if(!Number.isInteger(loanId)||loanId<1||!Number.isInteger(customerId)||customerId<1||!Number.isFinite(principal)||principal<=0||!Number.isFinite(interestRate)||interestRate<0||!Number.isInteger(installments)||!/^\\d{4}-\\d{2}-\\d{2}$/.test(startDate)||!/^\d{4}-\d{2}-\d{2}$/.test(firstDueDate)) return reply({error:"Informe cliente, valor, juros e datas válidos."},400);
+      if(!Number.isInteger(loanId)||loanId<1||!Number.isInteger(customerId)||customerId<1||!Number.isFinite(principal)||principal<=0||!Number.isFinite(interestRate)||interestRate<0||!Number.isInteger(installments)||!/^\d{4}-\\d{2}-\\d{2}$/.test(startDate)||!/^\d{4}-\d{2}-\d{2}$/.test(firstDueDate)) return reply({error:"Informe cliente, valor, juros e datas válidos."},400);
       if(frequency==="unico" && installments!==1)return reply({error:"Empréstimo único deve ter 1 parcela."},400);
       const {data:loan,error:loanError}=await db.from("wm_loans").select("id,customer_id,status").eq("tenant_id",sessionTenantId).eq("id",loanId).maybeSingle();
       if(loanError)throw loanError;
@@ -799,10 +799,10 @@ Deno.serve(async (req) => {
       if(financeScope==="personal"&&!["owner","admin"].includes(sessionRole))return reply({error:"Somente a administração pode acessar os registros pessoais."},403);
       if(!["sale_other_person","loan_given","loan_received","income","expense","payable","receivable"].includes(entryType))return reply({error:"Tipo de registro inválido."},400);
       const description=String(body.description||"").trim(), rawAmount=String(body.amount??"").trim();
-      const normalizedAmount=rawAmount.includes(",")?rawAmount.replace(/\\./g,"").replace(",","."):rawAmount;
+      const normalizedAmount=rawAmount.includes(",")?rawAmount.replace(/\./g,"").replace(",","."):rawAmount;
       const amount=Number(normalizedAmount), occurredAt=String(body.occurredAt||new Date().toISOString().slice(0,10)), dueDate=String(body.dueDate||"").trim()||null;
       if(description.length<2||description.length>240||!Number.isFinite(amount)||amount<=0)return reply({error:"Informe uma descrição e um valor válido."},400);
-      if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(occurredAt)||(dueDate&&!/^\\d{4}-\\d{2}-\\d{2}$/.test(dueDate)))return reply({error:"Confira as datas informadas."},400);
+      if(!/^\d{4}-\\d{2}-\\d{2}$/.test(occurredAt)||(dueDate&&!/^\d{4}-\\d{2}-\\d{2}$/.test(dueDate)))return reply({error:"Confira as datas informadas."},400);
       let reminderAt:string|null=null;
       const reminderRaw=String(body.reminderAt||"").trim();
       if(reminderRaw){const parsed=new Date(reminderRaw);if(Number.isNaN(parsed.getTime()))return reply({error:"Data do lembrete inválida."},400);reminderAt=parsed.toISOString();}
@@ -812,7 +812,7 @@ Deno.serve(async (req) => {
       return reply({message:"Registro salvo com sucesso.",id:data.id},201);
     }
     if (action === "record_personal_payment") {
-      const id=Number(body.id), rawAmount=String(body.amount??"").trim(), normalizedAmount=rawAmount.includes(",")?rawAmount.replace(/\\./g,"").replace(",","."):rawAmount, amount=Number(normalizedAmount);
+      const id=Number(body.id), rawAmount=String(body.amount??"").trim(), normalizedAmount=rawAmount.includes(",")?rawAmount.replace(/\./g,"").replace(",","."):rawAmount, amount=Number(normalizedAmount);
       if(!Number.isInteger(id)||id<1||!Number.isFinite(amount)||amount<=0)return reply({error:"Informe um registro e um valor válidos."},400);
       const {data:current,error:findError}=await db.from("wm_personal_records").select("id,finance_scope,amount,paid_amount,status").eq("tenant_id",sessionTenantId).eq("id",id).maybeSingle();
       if(findError)throw findError;
@@ -844,7 +844,7 @@ Deno.serve(async (req) => {
         if(uploadError)throw uploadError;
       }
       if(photo2){
-        const match=photo2.match(/^data:(image\\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+        const match=photo2.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
         if(!match){if(photoPath)await db.storage.from("wm-product-images").remove([photoPath]);return reply({error:"Formato da segunda foto inválido."},400);}
         const bytes=Uint8Array.from(atob(match[2]),c=>c.charCodeAt(0));
         if(bytes.byteLength>2*1024*1024){if(photoPath)await db.storage.from("wm-product-images").remove([photoPath]);return reply({error:"A segunda foto deve ter no máximo 2 MB."},400);}
@@ -884,7 +884,7 @@ Deno.serve(async (req) => {
         nextPhotoPath=uploadedPhotoPath;
       }else if(body.removePhoto===true){nextPhotoPath=null}
       if(photo2){
-        const match=photo2.match(/^data:(image\\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+        const match=photo2.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
         if(!match){if(uploadedPhotoPath)await db.storage.from("wm-product-images").remove([uploadedPhotoPath]);return reply({error:"Formato da segunda foto inválido."},400);}
         const bytes=Uint8Array.from(atob(match[2]),c=>c.charCodeAt(0));
         if(bytes.byteLength>2*1024*1024){if(uploadedPhotoPath)await db.storage.from("wm-product-images").remove([uploadedPhotoPath]);return reply({error:"A segunda foto deve ter no máximo 2 MB."},400);}
