@@ -831,8 +831,8 @@ Deno.serve(async (req) => {
     if (action === "create_product") {
       const barcode=String(body.barcode||"").trim(), name=String(body.name||"").trim();
       if(!barcode||!name)return reply({error:"Informe o código e o nome do produto."},400);
-      let photoPath:string|null=null;
-      const photo=String(body.photo||"");
+      let photoPath:string|null=null, photoPath2:string|null=null;
+      const photo=String(body.photo||""), photo2=String(body.photo2||"");
       if(photo){
         const match=photo.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
         if(!match)return reply({error:"Formato de foto inválido. Use JPG, PNG ou WebP."},400);
@@ -843,9 +843,20 @@ Deno.serve(async (req) => {
         const {error:uploadError}=await db.storage.from("wm-product-images").upload(photoPath,bytes,{contentType:match[1],cacheControl:"3600",upsert:false});
         if(uploadError)throw uploadError;
       }
-      const { error }=await db.from("wm_products").insert({tenant_id:sessionTenantId,barcode,name,brand:String(body.brand||"Outros"),cost_price:Number(body.costPrice||0),sale_price:Number(body.salePrice||0),stock:Math.max(0,Number(body.stock||0)),photo_path:photoPath,catalog_image_url:String(body.catalogImageUrl||"")||null});
+      if(photo2){
+        const match=photo2.match(/^data:(image\\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+        if(!match){if(photoPath)await db.storage.from("wm-product-images").remove([photoPath]);return reply({error:"Formato da segunda foto inválido."},400);}
+        const bytes=Uint8Array.from(atob(match[2]),c=>c.charCodeAt(0));
+        if(bytes.byteLength>2*1024*1024){if(photoPath)await db.storage.from("wm-product-images").remove([photoPath]);return reply({error:"A segunda foto deve ter no máximo 2 MB."},400);}
+        const ext=match[1]==="image/png"?"png":match[1]==="image/webp"?"webp":"jpg";
+        photoPath2=`${crypto.randomUUID()}.${ext}`;
+        const {error:uploadError}=await db.storage.from("wm-product-images").upload(photoPath2,bytes,{contentType:match[1],cacheControl:"3600",upsert:false});
+        if(uploadError){if(photoPath)await db.storage.from("wm-product-images").remove([photoPath]);throw uploadError;}
+      }
+      const { error }=await db.from("wm_products").insert({tenant_id:sessionTenantId,barcode,name,brand:String(body.brand||"Outros"),cost_price:Number(body.costPrice||0),sale_price:Number(body.salePrice||0),stock:Math.max(0,Number(body.stock||0)),photo_path:photoPath,photo_path_secondary:photoPath2,catalog_image_url:String(body.catalogImageUrl||"")||null});
       if(error){
         if(photoPath)await db.storage.from("wm-product-images").remove([photoPath]);
+        if(photoPath2)await db.storage.from("wm-product-images").remove([photoPath2]);
         if(error.code==="23505")return reply({error:"Este código já está cadastrado."},409);
         throw error
       }
@@ -855,12 +866,12 @@ Deno.serve(async (req) => {
     if (action === "update_product") {
       const id=Number(body.id), barcode=String(body.barcode||"").trim(), name=String(body.name||"").trim();
       if(!Number.isInteger(id)||id<1||!barcode||!name)return reply({error:"Produto inválido. Confira o código e o nome."},400);
-      const {data:current,error:findError}=await db.from("wm_products").select("photo_path").eq("tenant_id",sessionTenantId).eq("id",id).maybeSingle();
+      const {data:current,error:findError}=await db.from("wm_products").select("photo_path,photo_path_secondary").eq("tenant_id",sessionTenantId).eq("id",id).maybeSingle();
       if(findError)throw findError;
       if(!current)return reply({error:"Produto não encontrado."},404);
-      const oldPhotoPath=current.photo_path as string|null;
-      let nextPhotoPath=oldPhotoPath,uploadedPhotoPath:string|null=null;
-      const photo=String(body.photo||"");
+      const oldPhotoPath=current.photo_path as string|null, oldPhotoPath2=current.photo_path_secondary as string|null;
+      let nextPhotoPath=oldPhotoPath, nextPhotoPath2=oldPhotoPath2, uploadedPhotoPath:string|null=null, uploadedPhotoPath2:string|null=null;
+      const photo=String(body.photo||""), photo2=String(body.photo2||"");
       if(photo){
         const match=photo.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
         if(!match)return reply({error:"Formato de foto inválido. Use JPG, PNG ou WebP."},400);
@@ -872,13 +883,26 @@ Deno.serve(async (req) => {
         if(uploadError)throw uploadError;
         nextPhotoPath=uploadedPhotoPath;
       }else if(body.removePhoto===true){nextPhotoPath=null}
-      const {error}=await db.from("wm_products").update({barcode,name,brand:String(body.brand||"Outros"),cost_price:Number(body.costPrice||0),sale_price:Number(body.salePrice||0),stock:Math.max(0,Number(body.stock||0)),photo_path:nextPhotoPath,catalog_image_url:String(body.catalogImageUrl||"")||null}).eq("tenant_id",sessionTenantId).eq("id",id);
+      if(photo2){
+        const match=photo2.match(/^data:(image\\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+        if(!match){if(uploadedPhotoPath)await db.storage.from("wm-product-images").remove([uploadedPhotoPath]);return reply({error:"Formato da segunda foto inválido."},400);}
+        const bytes=Uint8Array.from(atob(match[2]),c=>c.charCodeAt(0));
+        if(bytes.byteLength>2*1024*1024){if(uploadedPhotoPath)await db.storage.from("wm-product-images").remove([uploadedPhotoPath]);return reply({error:"A segunda foto deve ter no máximo 2 MB."},400);}
+        const ext=match[1]==="image/png"?"png":match[1]==="image/webp"?"webp":"jpg";
+        uploadedPhotoPath2=`${crypto.randomUUID()}.${ext}`;
+        const {error:uploadError}=await db.storage.from("wm-product-images").upload(uploadedPhotoPath2,bytes,{contentType:match[1],cacheControl:"3600",upsert:false});
+        if(uploadError){if(uploadedPhotoPath)await db.storage.from("wm-product-images").remove([uploadedPhotoPath]);throw uploadError;}
+        nextPhotoPath2=uploadedPhotoPath2;
+      }else if(body.removePhoto2===true){nextPhotoPath2=null}
+      const {error}=await db.from("wm_products").update({barcode,name,brand:String(body.brand||"Outros"),cost_price:Number(body.costPrice||0),sale_price:Number(body.salePrice||0),stock:Math.max(0,Number(body.stock||0)),photo_path:nextPhotoPath,photo_path_secondary:nextPhotoPath2,catalog_image_url:String(body.catalogImageUrl||"")||null}).eq("tenant_id",sessionTenantId).eq("id",id);
       if(error){
         if(uploadedPhotoPath)await db.storage.from("wm-product-images").remove([uploadedPhotoPath]);
+        if(uploadedPhotoPath2)await db.storage.from("wm-product-images").remove([uploadedPhotoPath2]);
         if(error.code==="23505")return reply({error:"Este código já está cadastrado em outro produto."},409);
         throw error
       }
       if(oldPhotoPath&&oldPhotoPath!==nextPhotoPath)await db.storage.from("wm-product-images").remove([oldPhotoPath]);
+      if(oldPhotoPath2&&oldPhotoPath2!==nextPhotoPath2)await db.storage.from("wm-product-images").remove([oldPhotoPath2]);
       await db.from("wm_product_catalog").upsert({barcode,name,brand:String(body.brand||"Outros"),source:"wm_products",verified_at:new Date().toISOString(),updated_at:new Date().toISOString()},{onConflict:"barcode"});
       return reply({message:"Produto atualizado com sucesso"});
     }
