@@ -63,12 +63,12 @@ export function OrganizerView({ api, notify }: { api: (action: string, payload?:
 
   const visible = useMemo(() => records
     .filter(item => item.financeScope === scope)
-    .filter(item => filter === "all" || (filter === "open" ? ["open", "partial", "overdue"].includes(item.status) : filter === "today" ? item.dueDate === today() && item.status !== "paid" && item.status !== "canceled" : item.status === filter))
+    .filter(item => filter === "all" || (filter === "open" ? ["open", "partial", "overdue"].includes(item.status) : filter === "today" ? (item.dueDate === today() || (item.reminderAt && new Date(item.reminderAt).toLocaleDateString("en-CA") === today())) && item.status !== "paid" && item.status !== "canceled" : item.status === filter))
     .sort((a, b) => (a.dueDate || "9999-12-31").localeCompare(b.dueDate || "9999-12-31")), [records, scope, filter]);
 
   const active = records.filter(item => item.financeScope === scope && ["open", "partial", "overdue"].includes(item.status));
   const outstanding = active.reduce((sum, item) => sum + Math.max(0, item.amount - item.paidAmount), 0);
-  const dueToday = active.filter(item => item.dueDate === today()).length;
+  const dueToday = active.filter(item => item.dueDate === today() || (item.reminderAt && new Date(item.reminderAt).toLocaleDateString("en-CA") === today())).length;
   const overdue = active.filter(item => item.dueDate && item.dueDate < today()).length;
 
   async function createRecord(event: FormEvent<HTMLFormElement>) {
