@@ -3,7 +3,7 @@ const ADMIN_ACTIONS = new Set([
   "login", "email_login", "platform_bootstrap_admin", "signup_owner", "logout", "session_check", "list", "barcode_lookup", "finance_report", "create_cash_entry", "store_admin", "update_store_settings",
   "update_store_order_status", "create_product", "update_product",
   "create_customer", "create_sale", "create_express_sale", "mark_paid", "customer_history", "create_loan", "update_loan", "cancel_loan", "record_loan_payment", "record_loan_interest_payment", "update_loan_policy", "create_supplier_bill",
-  "mark_supplier_bill_paid",
+  "mark_supplier_bill_paid", "personal_records_list", "create_personal_record", "record_personal_payment",
   "team_list", "create_team_member", "update_team_member", "change_password",
   "platform_list_tenants", "platform_create_tenant", "platform_update_tenant",
 ]);
