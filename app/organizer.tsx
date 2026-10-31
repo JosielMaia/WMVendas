@@ -72,7 +72,8 @@ export function OrganizerView({ api, notify }: { api: (action: string, payload?:
 
   async function createRecord(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const amountRaw = String(form.get("amount") || "").trim();
     const amount = Number(amountRaw.includes(",") ? amountRaw.replace(/\\./g, "").replace(",", ".") : amountRaw);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -94,7 +95,7 @@ export function OrganizerView({ api, notify }: { api: (action: string, payload?:
         reminderAt: String(form.get("reminderAt") || ""),
         notes: String(form.get("notes") || ""),
       });
-      event.currentTarget.reset();
+      formElement.reset();
       setShowForm(false);
       notify("Registro salvo. Ele já aparece na sua organização.");
       await refresh();
