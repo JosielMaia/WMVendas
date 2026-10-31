@@ -794,7 +794,7 @@ Deno.serve(async (req) => {
       if(paymentError)throw paymentError;
       const paymentsByRecord=new Map<number,any[]>();
       for(const payment of paymentRows||[]){const key=Number(payment.record_id);if(!paymentsByRecord.has(key))paymentsByRecord.set(key,[]);paymentsByRecord.get(key)!.push({id:Number(payment.id),amount:Number(payment.amount),paymentMethod:payment.payment_method,paidAt:payment.paid_at,notes:payment.notes});}
-      const today=new Date().toISOString().slice(0,10);
+      const today=new Intl.DateTimeFormat("en-CA",{timeZone:"America/Belem"}).format(new Date());
       return reply({records:(data||[]).map((r:any)=>({id:Number(r.id),financeScope:r.finance_scope,entryType:r.entry_type,personName:r.person_name,personPhone:r.person_phone,description:r.description,category:r.category,amount:Number(r.amount),paidAmount:Number(r.paid_amount||0),occurredAt:r.occurred_at,dueDate:r.due_date,status:r.status==="open"&&r.due_date&&r.due_date<today?"overdue":r.status,paymentMethod:r.payment_method,notes:r.notes,reminderAt:r.reminder_at,paidAt:r.paid_at,payments:paymentsByRecord.get(Number(r.id))||[]}))});
     }
     if (action === "create_personal_record") {
