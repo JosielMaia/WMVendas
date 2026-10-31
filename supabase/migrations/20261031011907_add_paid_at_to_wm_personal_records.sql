@@ -1,0 +1,1 @@
+alter table public.wm_personal_records add column if not exists paid_at timestamptz;
