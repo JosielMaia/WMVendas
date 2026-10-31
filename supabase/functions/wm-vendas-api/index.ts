@@ -810,15 +810,20 @@ Deno.serve(async (req) => {
       let reminderAt:string|null=null;
       const reminderRaw=String(body.reminderAt||"").trim();
       if(reminderRaw){const parsed=new Date(reminderRaw);if(Number.isNaN(parsed.getTime()))return reply({error:"Data do lembrete inválida."},400);reminderAt=parsed.toISOString();}
-      const immediate=["income","expense"].includes(entryType), paymentMethod=String(body.paymentMethod||"outro").slice(0,30), now=new Date().toISOString();
-      const {data,error}=await db.from("wm_personal_records").insert({tenant_id:sessionTenantId,finance_scope:financeScope,entry_type:entryType,person_name:String(body.personName||"").trim().slice(0,120)||null,person_phone:String(body.personPhone||"").replace(/[^0-9+]/g,"").slice(0,24)||null,description,category:String(body.category||"Outros").trim().slice(0,60)||"Outros",amount:Number(amount.toFixed(2)),paid_amount:immediate?Number(amount.toFixed(2)):0,status:immediate?"paid":"open",payment_method:immediate?paymentMethod:null,paid_at:immediate?now:null,occurred_at:occurredAt,due_date:dueDate,reminder_at:reminderAt,notes:String(body.notes||"").trim().slice(0,1000)||null}).select("id").single();
-      if(error)throw error;
-      if(immediate){
-        const {error:paymentInsertError}=await db.from("wm_personal_record_payments").insert({tenant_id:sessionTenantId,record_id:data.id,amount:Number(amount.toFixed(2)),payment_method:paymentMethod,paid_at:now,notes:"Lançamento registrado como movimentação concluída."});
-        if(paymentInsertError){await db.from("wm_personal_records").delete().eq("tenant_id",sessionTenantId).eq("id",data.id);throw paymentInsertError;}
-      }
-      await audit(session,"personal_record.created","personal_record",String(data.id),{financeScope,entryType,amount,immediate});
-      return reply({message:"Registro salvo com sucesso.",id:data.id},201);
+      const paymentMethod=String(body.paymentMethod||"outro").slice(0,30);
+      const {data,error}=await db.rpc("wm_create_personal_record",{
+        p_tenant_id:sessionTenantId,p_finance_scope:financeScope,p_entry_type:entryType,
+        p_person_name:String(body.personName||"").trim().slice(0,120)||null,
+        p_person_phone:String(body.personPhone||"").replace(/[^0-9+]/g,"").slice(0,24)||null,
+        p_description:description,p_category:String(body.category||"Outros").trim().slice(0,60)||"Outros",
+        p_amount:Number(amount.toFixed(2)),p_occurred_at:occurredAt,p_due_date:dueDate,
+        p_reminder_at:reminderAt,p_notes:String(body.notes||"").trim().slice(0,1000)||null,
+        p_payment_method:paymentMethod
+      });
+      if(error)return reply({error:error.message},400);
+      const recordId=Number(data?.id);
+      await audit(session,"personal_record.created","personal_record",String(recordId),{financeScope,entryType,amount,immediate:!!data?.immediate});
+      return reply({message:"Registro salvo com sucesso.",id:recordId,immediate:!!data?.immediate},201);
     }
     if (action === "record_personal_payment") {
       const id=Number(body.id), rawAmount=String(body.amount??"").trim(), normalizedAmount=rawAmount.includes(",")?rawAmount.replace(/\./g,"").replace(",","."):rawAmount, amount=Number(normalizedAmount);
